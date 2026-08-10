@@ -702,7 +702,22 @@ final class StatusTableViewController: LoopChartsTableViewController {
                                                       glucoseDisplay: glucoseDisplay,
                                                       wasUserEntered: glucose.wasUserEntered,
                                                       isDisplayOnly: glucose.isDisplayOnly)
-                    heroStatusView.glucoseRangeCategory = glucoseDisplay?.glucoseRangeCategory
+                    // Color the ring against the same in-range band the chart shows.
+                    // CGM-reported categories (sensor-limit LOW/HIGH) take precedence;
+                    // most CGMs don't report one, so fall back to comparing the reading
+                    // to the band: low is red, in range green, high yellow.
+                    if let cgmCategory = glucoseDisplay?.glucoseRangeCategory {
+                        heroStatusView.glucoseRangeCategory = cgmCategory
+                    } else {
+                        let mgdl = glucose.quantity.doubleValue(for: .milligramsPerDeciliter)
+                        if mgdl < Self.chartInRangeBand.lowerBound.doubleValue(for: .milligramsPerDeciliter) {
+                            heroStatusView.glucoseRangeCategory = .low
+                        } else if mgdl > Self.chartInRangeBand.upperBound.doubleValue(for: .milligramsPerDeciliter) {
+                            heroStatusView.glucoseRangeCategory = .high
+                        } else {
+                            heroStatusView.glucoseRangeCategory = .normal
+                        }
+                    }
                 } else {
                     heroStatusView.glucoseRangeCategory = nil
                 }
