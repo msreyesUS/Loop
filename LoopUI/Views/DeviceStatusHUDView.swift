@@ -39,7 +39,8 @@ import LoopKitUI
     
     @IBOutlet private weak var backgroundView: UIView! {
         didSet {
-            backgroundView.backgroundColor = .systemBackground
+            // Translucent to match the status screen's card material
+            backgroundView.backgroundColor = .systemBackground.withAlphaComponent(0.62)
             backgroundView.layer.cornerRadius = 23
         }
     }

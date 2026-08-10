@@ -1003,7 +1003,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
     /// partially transparent so the background gradient shows through
     private static func makeCardView(cornerRadius: CGFloat = 20) -> UIView {
         let card = UIView()
-        card.backgroundColor = .systemBackground.withAlphaComponent(0.5)
+        card.backgroundColor = .systemBackground.withAlphaComponent(0.62)
         card.layer.cornerRadius = cornerRadius
         card.layer.cornerCurve = .continuous
         card.translatesAutoresizingMaskIntoConstraints = false
