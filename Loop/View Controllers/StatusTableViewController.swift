@@ -54,6 +54,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         setupToolbarItems()
         
         tableView.register(HeroStatusTableViewCell.self, forCellReuseIdentifier: HeroStatusTableViewCell.className)
+        tableView.register(StatsTableViewCell.self, forCellReuseIdentifier: StatsTableViewCell.className)
         tableView.register(BolusProgressTableViewCell.nib(), forCellReuseIdentifier: BolusProgressTableViewCell.className)
         tableView.register(AlertPermissionsDisabledWarningCell.self, forCellReuseIdentifier: AlertPermissionsDisabledWarningCell.className)
         tableView.register(MuteAlertsWarningCell.self, forCellReuseIdentifier: MuteAlertsWarningCell.className)
@@ -428,6 +429,12 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
                 if let netBasal = netBasal {
                     self.hudView?.pumpStatusHUD.basalRateHUD.setNetBasalRate(netBasal.rate, percent: netBasal.percent, at: netBasal.start)
+
+                    if let rateString = self.netBasalFormatter.string(from: netBasal.rate) {
+                        self.netBasalDescription = String(format: NSLocalizedString("%@ U", comment: "The format string describing the net basal rate. (1: localized basal rate value)"), rateString)
+                    } else {
+                        self.netBasalDescription = nil
+                    }
                 }
             }
 
@@ -509,6 +516,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 self.currentCOBDescription = nil
             }
 
+            self.updateStatsCell()
+
             self.tableView.beginUpdates()
             if let hudView = self.hudView {
                 // CGM Status
@@ -580,6 +589,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
     private enum Section: Int, CaseIterable {
         case alertWarning
         case hero
+        case stats
         case hud
         case status
     }
@@ -591,6 +601,19 @@ final class StatusTableViewController: LoopChartsTableViewController {
     private var currentIOBDescription: String?
 
     private var currentCOBDescription: String?
+
+    private var netBasalDescription: String?
+
+    private lazy var netBasalFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 1
+        formatter.minimumIntegerDigits = 1
+        formatter.positiveFormat = "+0.0##"
+        formatter.negativeFormat = "-0.0##"
+
+        return formatter
+    }()
 
     // MARK: - Loop Status Section Data
 
@@ -650,6 +673,19 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
 
         return statusRowMode
+    }
+
+    private func configureStatsCell(_ cell: StatsTableViewCell) {
+        let placeholder = "—"
+        cell.iobValueLabel.text = currentIOBDescription ?? placeholder
+        cell.cobValueLabel.text = currentCOBDescription ?? placeholder
+        cell.basalValueLabel.text = netBasalDescription ?? placeholder
+    }
+
+    private func updateStatsCell() {
+        if let cell = tableView.cellForRow(at: IndexPath(row: 0, section: Section.stats.rawValue)) as? StatsTableViewCell {
+            configureStatsCell(cell)
+        }
     }
 
     private var shouldShowBannerWarning: Bool {
@@ -775,6 +811,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
             return shouldShowBannerWarning ? 1 : 0
         case .hero:
             return 1
+        case .stats:
+            return 1
         case .hud:
             return shouldShowHUD ? 1 : 0
         case .status:
@@ -798,6 +836,89 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 heroView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
                 heroView.topAnchor.constraint(equalTo: contentView.topAnchor),
                 heroView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            ])
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+    }
+
+    private class StatsTableViewCell: UITableViewCell {
+        let iobValueLabel = UILabel()
+        let cobValueLabel = UILabel()
+        let basalValueLabel = UILabel()
+
+        override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+            super.init(style: style, reuseIdentifier: reuseIdentifier)
+
+            selectionStyle = .none
+            backgroundColor = .secondarySystemBackground
+
+            let columns = [
+                (NSLocalizedString("Active Insulin", comment: "The title of the active insulin stats column"), iobValueLabel),
+                (NSLocalizedString("Active Carbs", comment: "The title of the active carbs stats column"), cobValueLabel),
+                (NSLocalizedString("Basal", comment: "The title of the basal stats column"), basalValueLabel),
+            ].map { (title, valueLabel) -> UIStackView in
+                let titleLabel = UILabel()
+                titleLabel.font = .systemFont(ofSize: 13)
+                titleLabel.textColor = .secondaryLabel
+                titleLabel.text = title
+                titleLabel.adjustsFontSizeToFitWidth = true
+
+                valueLabel.font = .monospacedDigitSystemFont(ofSize: 20, weight: .semibold)
+                valueLabel.textColor = .label
+
+                let column = UIStackView(arrangedSubviews: [titleLabel, valueLabel])
+                column.axis = .vertical
+                column.alignment = .center
+                column.spacing = 4
+                return column
+            }
+
+            func makeSeparator() -> UIView {
+                let separator = UIView()
+                separator.backgroundColor = .separator
+                return separator
+            }
+
+            let verticalSeparators = [makeSeparator(), makeSeparator()]
+            let stack = UIStackView(arrangedSubviews: [columns[0], verticalSeparators[0], columns[1], verticalSeparators[1], columns[2]])
+            stack.axis = .horizontal
+            stack.alignment = .fill
+            stack.translatesAutoresizingMaskIntoConstraints = false
+
+            let topSeparator = makeSeparator()
+            let bottomSeparator = makeSeparator()
+            topSeparator.translatesAutoresizingMaskIntoConstraints = false
+            bottomSeparator.translatesAutoresizingMaskIntoConstraints = false
+
+            contentView.addSubview(stack)
+            contentView.addSubview(topSeparator)
+            contentView.addSubview(bottomSeparator)
+
+            let hairline = 1 / UIScreen.main.scale
+
+            NSLayoutConstraint.activate([
+                columns[0].widthAnchor.constraint(equalTo: columns[1].widthAnchor),
+                columns[1].widthAnchor.constraint(equalTo: columns[2].widthAnchor),
+                verticalSeparators[0].widthAnchor.constraint(equalToConstant: hairline),
+                verticalSeparators[1].widthAnchor.constraint(equalToConstant: hairline),
+
+                stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+                stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
+
+                topSeparator.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                topSeparator.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                topSeparator.topAnchor.constraint(equalTo: contentView.topAnchor),
+                topSeparator.heightAnchor.constraint(equalToConstant: hairline),
+
+                bottomSeparator.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                bottomSeparator.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                bottomSeparator.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+                bottomSeparator.heightAnchor.constraint(equalToConstant: hairline),
             ])
         }
 
@@ -902,6 +1023,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
         case .hero:
             let cell = tableView.dequeueReusableCell(withIdentifier: HeroStatusTableViewCell.className, for: indexPath) as! HeroStatusTableViewCell
             heroStatusView = cell.heroView
+
+            return cell
+        case .stats:
+            let cell = tableView.dequeueReusableCell(withIdentifier: StatsTableViewCell.className, for: indexPath) as! StatsTableViewCell
+            configureStatsCell(cell)
 
             return cell
         case .hud:
@@ -1039,7 +1165,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 tableView.deselectRow(at: indexPath, animated: true)
                 presentUnmuteAlertConfirmation()
             }
-        case .hero, .hud:
+        case .hero, .stats, .hud:
             break
         case .status:
             switch StatusRow(rawValue: indexPath.row)! {

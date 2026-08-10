@@ -932,6 +932,9 @@
         }
       }
     },
+    "%@ U" : {
+      "comment" : "The format string describing the net basal rate. (1: localized basal rate value)"
+    },
     "%@ U Total" : {
       "comment" : "The subtitle format describing total insulin. (1: localized insulin total)",
       "extractionState" : "stale",
@@ -4645,7 +4648,7 @@
       }
     },
     "Active Carbs" : {
-      "comment" : "Title describing quantity of still-absorbing carbohydrates",
+      "comment" : "The title of the active carbs stats column\nTitle describing quantity of still-absorbing carbohydrates",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -4770,7 +4773,7 @@
       }
     },
     "Active Insulin" : {
-      "comment" : "Details for missing data error when active insulin amount is missing\nTitle describing quantity of still-absorbing insulin",
+      "comment" : "Details for missing data error when active insulin amount is missing\nThe title of the active insulin stats column\nTitle describing quantity of still-absorbing insulin",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -8494,6 +8497,9 @@
           }
         }
       }
+    },
+    "Basal" : {
+      "comment" : "The title of the basal stats column"
     },
     "Basal Rate Schedule" : {
       "comment" : "Details for configuration error when basal rate schedule is missing",
