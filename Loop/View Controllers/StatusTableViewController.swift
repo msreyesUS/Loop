@@ -1564,8 +1564,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
             stack.distribution = .fillEqually
             stack.translatesAutoresizingMaskIntoConstraints = false
 
-            // One continuous floating capsule containing all three items, using the same
-            // translucent card material as the rest of the screen
+            // One continuous floating bar containing all three items, using the same
+            // translucent card material and corner rounding as the rest of the screen
             capsuleContainer.addSubview(stack)
 
             contentView.addSubview(capsuleContainer)
@@ -1583,12 +1583,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 capsuleContainer.heightAnchor.constraint(equalToConstant: 64),
                 bottomConstraint,
             ])
-        }
-
-        override func layoutSubviews() {
-            super.layoutSubviews()
-
-            capsuleContainer.layer.cornerRadius = capsuleContainer.bounds.height / 2
         }
 
         required init?(coder: NSCoder) {
