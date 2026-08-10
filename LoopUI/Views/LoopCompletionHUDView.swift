@@ -267,7 +267,7 @@ public final class StatusHeroView: UIView {
 
     private enum LayoutConstants {
         static let ringDiameter: CGFloat = 200
-        static let glucoseFontSize: CGFloat = 78
+        static let glucoseFontSize: CGFloat = 92
         static let trendIconPointSize: CGFloat = 20
         static let sparklineHeight: CGFloat = 44
     }
@@ -370,20 +370,15 @@ public final class StatusHeroView: UIView {
         infoStack.alignment = .center
         infoStack.spacing = 4
 
-        let glucoseStack = UIStackView(arrangedSubviews: [glucoseLabel, infoStack])
-        glucoseStack.axis = .vertical
-        glucoseStack.alignment = .center
-        glucoseStack.spacing = 2
-
         loopCompletionHUD.translatesAutoresizingMaskIntoConstraints = false
-        glucoseStack.translatesAutoresizingMaskIntoConstraints = false
+        glucoseLabel.translatesAutoresizingMaskIntoConstraints = false
+        infoStack.translatesAutoresizingMaskIntoConstraints = false
         eventualGlucoseLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        loopCompletionHUD.translatesAutoresizingMaskIntoConstraints = false
         sparklineView.translatesAutoresizingMaskIntoConstraints = false
 
         addSubview(loopCompletionHUD)
-        addSubview(glucoseStack)
+        addSubview(glucoseLabel)
+        addSubview(infoStack)
         addSubview(sparklineView)
         addSubview(eventualGlucoseLabel)
 
@@ -399,9 +394,15 @@ public final class StatusHeroView: UIView {
             loopCompletionHUD.centerXAnchor.constraint(equalTo: centerXAnchor),
             loopCompletionHUD.topAnchor.constraint(equalTo: topAnchor, constant: 16),
 
-            glucoseStack.centerXAnchor.constraint(equalTo: loopCompletionHUD.centerXAnchor),
-            glucoseStack.centerYAnchor.constraint(equalTo: loopCompletionHUD.centerYAnchor),
-            glucoseStack.widthAnchor.constraint(lessThanOrEqualTo: loopCompletionHUD.widthAnchor, constant: -32),
+            // The glucose value itself is centered in the ring; the trend/unit line
+            // hangs below it so it doesn't drag the number off center
+            glucoseLabel.centerXAnchor.constraint(equalTo: loopCompletionHUD.centerXAnchor),
+            glucoseLabel.centerYAnchor.constraint(equalTo: loopCompletionHUD.centerYAnchor),
+            glucoseLabel.widthAnchor.constraint(lessThanOrEqualTo: loopCompletionHUD.widthAnchor, constant: -36),
+
+            infoStack.centerXAnchor.constraint(equalTo: loopCompletionHUD.centerXAnchor),
+            infoStack.topAnchor.constraint(equalTo: glucoseLabel.bottomAnchor, constant: -4),
+            infoStack.widthAnchor.constraint(lessThanOrEqualTo: loopCompletionHUD.widthAnchor, constant: -36),
 
             sparklineView.topAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 12),
             sparklineView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 24),
@@ -545,6 +546,15 @@ final class GlucoseSparklineView: UIView {
               let maxValue = all.map(\.value).max(),
               maxDate > minDate
         else {
+            // No data: draw a flat placeholder line so the sparkline area keeps its
+            // presence instead of disappearing
+            let placeholder = UIBezierPath()
+            placeholder.move(to: CGPoint(x: bounds.minX + 2, y: bounds.midY))
+            placeholder.addLine(to: CGPoint(x: bounds.maxX - 2, y: bounds.midY))
+            placeholder.lineWidth = 2
+            placeholder.lineCapStyle = .round
+            UIColor.tertiaryLabel.resolvedColor(with: traitCollection).setStroke()
+            placeholder.stroke()
             return
         }
 

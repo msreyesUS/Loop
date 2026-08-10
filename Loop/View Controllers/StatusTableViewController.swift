@@ -1080,9 +1080,12 @@ final class StatusTableViewController: LoopChartsTableViewController {
         private static func makeButton(title: String, image: UIImage?, color: UIColor) -> UIButton {
             var config: UIButton.Configuration
             if #available(iOS 26.0, *) {
-                config = .prominentGlass()
+                // Clear glass with the color carried by the icon and label,
+                // like system tab bar items
+                config = .glass()
             } else {
-                config = .filled()
+                config = .tinted()
+                config.baseBackgroundColor = color
             }
             var attributedTitle = AttributedString(title)
             attributedTitle.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
@@ -1091,8 +1094,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             config.imagePlacement = .top
             config.imagePadding = 10
             config.cornerStyle = .large
-            config.baseForegroundColor = .white
-            config.baseBackgroundColor = color
+            config.baseForegroundColor = color
             config.contentInsets = NSDirectionalEdgeInsets(top: 20, leading: 8, bottom: 20, trailing: 8)
             let button = UIButton(configuration: config)
             button.tintColor = color
@@ -1155,22 +1157,18 @@ final class StatusTableViewController: LoopChartsTableViewController {
         let suspendButton: UIButton
         let settingsButton: UIButton
 
+        private let glassContainer: UIVisualEffectView
+
         private static func makeButton(title: String, image: UIImage?, color: UIColor) -> UIButton {
-            var config: UIButton.Configuration
-            if #available(iOS 26.0, *) {
-                config = .glass()
-            } else {
-                config = .gray()
-            }
+            var config = UIButton.Configuration.plain()
             var attributedTitle = AttributedString(title)
-            attributedTitle.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+            attributedTitle.font = UIFont.systemFont(ofSize: 12, weight: .medium)
             config.attributedTitle = attributedTitle
             config.image = image?.withRenderingMode(.alwaysTemplate)
-            config.imagePlacement = .leading
-            config.imagePadding = 6
-            config.cornerStyle = .large
+            config.imagePlacement = .top
+            config.imagePadding = 4
             config.baseForegroundColor = color
-            config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 4, bottom: 12, trailing: 4)
+            config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 4, bottom: 8, trailing: 4)
             return UIButton(configuration: config)
         }
 
@@ -1185,6 +1183,16 @@ final class StatusTableViewController: LoopChartsTableViewController {
                                              image: UIImage(named: "settings"),
                                              color: .label)
 
+            // A single floating glass capsule containing the three tab-style items,
+            // like the system tab bar
+            let effect: UIVisualEffect
+            if #available(iOS 26.0, *) {
+                effect = UIGlassEffect()
+            } else {
+                effect = UIBlurEffect(style: .systemMaterial)
+            }
+            glassContainer = UIVisualEffectView(effect: effect)
+
             super.init(style: style, reuseIdentifier: reuseIdentifier)
 
             selectionStyle = .none
@@ -1197,18 +1205,33 @@ final class StatusTableViewController: LoopChartsTableViewController {
             let stack = UIStackView(arrangedSubviews: [preMealButton, suspendButton, settingsButton])
             stack.axis = .horizontal
             stack.distribution = .fillEqually
-            stack.spacing = 8
             stack.translatesAutoresizingMaskIntoConstraints = false
 
-            contentView.addSubview(stack)
-            let bottomConstraint = stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
+            glassContainer.clipsToBounds = true
+            glassContainer.contentView.addSubview(stack)
+            glassContainer.translatesAutoresizingMaskIntoConstraints = false
+
+            contentView.addSubview(glassContainer)
+            let bottomConstraint = glassContainer.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10)
             bottomConstraint.priority = UILayoutPriority(999)
             NSLayoutConstraint.activate([
-                stack.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
-                stack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
-                stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
+                stack.leadingAnchor.constraint(equalTo: glassContainer.contentView.leadingAnchor),
+                stack.trailingAnchor.constraint(equalTo: glassContainer.contentView.trailingAnchor),
+                stack.topAnchor.constraint(equalTo: glassContainer.contentView.topAnchor),
+                stack.bottomAnchor.constraint(equalTo: glassContainer.contentView.bottomAnchor),
+
+                glassContainer.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
+                glassContainer.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
+                glassContainer.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
+                glassContainer.heightAnchor.constraint(equalToConstant: 62),
                 bottomConstraint,
             ])
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+
+            glassContainer.layer.cornerRadius = glassContainer.bounds.height / 2
         }
 
         required init?(coder: NSCoder) {
