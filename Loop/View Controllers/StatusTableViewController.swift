@@ -485,6 +485,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
         var carbsOnBoard: HKQuantity?
         var newLastManualBolus: DoseEntry?
         var lastManualBolusUpdated = false
+        var newLastCarbEntryDate: Date?
+        var lastCarbEntryUpdated = false
         let startDate = Date(timeIntervalSinceNow: -LoopConstants.statusChartMinimumHistoryDisplay)
         let basalDeliveryState = self.basalDeliveryState
         let automaticDosingEnabled = automaticDosingStatus.automaticDosingEnabled
@@ -522,6 +524,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                     } else {
                         self.netBasalDescription = nil
                     }
+                    self.netBasalStart = netBasal.start
                 }
             }
 
@@ -554,6 +557,20 @@ final class StatusTableViewController: LoopChartsTableViewController {
                     glucoseSamples = nil
                 case .success(let samples):
                     glucoseSamples = samples
+                }
+                reloadGroup.leave()
+            }
+        }
+
+        if currentContext.contains(.carbs) {
+            reloadGroup.enter()
+            deviceManager.carbStore.getCarbEntries(start: Date(timeIntervalSinceNow: -Self.lastManualBolusLookback), end: nil) { (result) in
+                switch result {
+                case .failure(let error):
+                    self.log.error("CarbStore failed to get carb entries: %{public}@", String(describing: error))
+                case .success(let entries):
+                    newLastCarbEntryDate = entries.map(\.startDate).max()
+                    lastCarbEntryUpdated = true
                 }
                 reloadGroup.leave()
             }
@@ -635,6 +652,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
             // Last Bolus
             if lastManualBolusUpdated {
                 self.lastManualBolus = newLastManualBolus
+            }
+            if lastCarbEntryUpdated {
+                self.lastCarbEntryDate = newLastCarbEntryDate
             }
 
             self.updateStatsCell()
@@ -747,6 +767,12 @@ final class StatusTableViewController: LoopChartsTableViewController {
     /// Automatic boluses (from the Automatic Bolus dosing strategy) are excluded so this doesn't
     /// churn every five minutes.
     private var lastManualBolus: DoseEntry?
+
+    /// When the most recent carb entry was made, cached under the carbs refresh context
+    private var lastCarbEntryDate: Date?
+
+    /// When the current net basal took effect (updates as the loop adjusts the temp basal)
+    private var netBasalStart: Date?
 
     private static let lastManualBolusLookback = TimeInterval(hours: 24)
 
@@ -892,9 +918,23 @@ final class StatusTableViewController: LoopChartsTableViewController {
         if let bolus = lastManualBolus,
            let volumeString = insulinFormatter.string(from: HKQuantity(unit: .internationalUnit(), doubleValue: bolus.deliveredUnits ?? bolus.programmedUnits))
         {
-            cell.iobCaptionLabel.text = String(format: NSLocalizedString("Last bolus %1$@ · %2$@", comment: "The caption describing the last bolus below active insulin. (1: localized insulin amount)(2: localized time)"), volumeString, bolusTimeFormatter.string(from: bolus.startDate))
+            cell.iobCaptionLabel.text = String(format: NSLocalizedString("%1$@ · %2$@", comment: "The caption describing the last bolus below active insulin. (1: localized insulin amount)(2: localized time)"), volumeString, bolusTimeFormatter.string(from: bolus.startDate))
         } else {
             cell.iobCaptionLabel.text = " "
+        }
+
+        // When the most recent carbs were entered
+        if let lastCarbEntryDate = lastCarbEntryDate {
+            cell.cobCaptionLabel.text = bolusTimeFormatter.string(from: lastCarbEntryDate)
+        } else {
+            cell.cobCaptionLabel.text = " "
+        }
+
+        // When the current net basal took effect
+        if let netBasalStart = netBasalStart {
+            cell.basalCaptionLabel.text = bolusTimeFormatter.string(from: netBasalStart)
+        } else {
+            cell.basalCaptionLabel.text = " "
         }
     }
 
@@ -1361,7 +1401,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 valueLabel.textColor = .label
 
                 captionLabel.font = .systemFont(ofSize: 10)
-                captionLabel.textColor = .tertiaryLabel
+                captionLabel.textColor = .secondaryLabel
                 captionLabel.adjustsFontSizeToFitWidth = true
                 captionLabel.minimumScaleFactor = 0.7
                 captionLabel.text = " "
