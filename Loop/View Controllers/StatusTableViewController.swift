@@ -1400,52 +1400,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
     }
 
-    /// A vertical color gradient used behind the primary action buttons
-    private class PrimaryButtonGradientView: UIView {
-        override class var layerClass: AnyClass { CAGradientLayer.self }
-
-        private let baseColor: UIColor
-
-        init(color: UIColor) {
-            baseColor = color
-            super.init(frame: .zero)
-            isUserInteractionEnabled = false
-            updateColors()
-        }
-
-        required init?(coder: NSCoder) {
-            fatalError("init(coder:) has not been implemented")
-        }
-
-        override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-            super.traitCollectionDidChange(previousTraitCollection)
-            updateColors()
-        }
-
-        private func updateColors() {
-            let resolved = baseColor.resolvedColor(with: traitCollection)
-            let gradient = layer as! CAGradientLayer
-            gradient.startPoint = CGPoint(x: 0.5, y: 0)
-            gradient.endPoint = CGPoint(x: 0.5, y: 1)
-            gradient.colors = [
-                Self.blend(resolved, with: .white, fraction: 0.3).cgColor,
-                resolved.cgColor,
-                Self.blend(resolved, with: .black, fraction: 0.12).cgColor,
-            ]
-        }
-
-        private static func blend(_ color: UIColor, with other: UIColor, fraction: CGFloat) -> UIColor {
-            var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
-            var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
-            color.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
-            other.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
-            return UIColor(red: r1 + (r2 - r1) * fraction,
-                           green: g1 + (g2 - g1) * fraction,
-                           blue: b1 + (b2 - b1) * fraction,
-                           alpha: a1)
-        }
-    }
-
     private class PrimaryActionsTableViewCell: UITableViewCell {
         var onBolus: (() -> Void)?
         var onCarbs: (() -> Void)?
@@ -1472,8 +1426,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
             config.cornerStyle = .large
             config.baseForegroundColor = .white
             config.baseBackgroundColor = color
-            // A subtle vertical gradient of the button color, under the glass sheen
-            config.background.customView = PrimaryButtonGradientView(color: color)
             config.contentInsets = NSDirectionalEdgeInsets(top: 20, leading: 8, bottom: 20, trailing: 8)
             let button = UIButton(configuration: config)
             button.tintColor = color
@@ -1482,16 +1434,17 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
 
         override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
-            // Palette button colors: the slate trio
+            // Distinct palette colors: slate for the primary action, success green for
+            // carbs, info blue for presets
             bolusButton = Self.makeButton(title: NSLocalizedString("Bolus", comment: "The label of the bolus action button"),
                                           image: UIImage(named: "bolus"),
                                           color: UIColor(named: "primaryButton1") ?? .systemTeal)
             carbsButton = Self.makeButton(title: NSLocalizedString("Carbs", comment: "The label of the carb entry action button"),
                                           image: UIImage(named: "carbs"),
-                                          color: UIColor(named: "primaryButton2") ?? .systemGreen)
+                                          color: .freshColor)
             presetButton = Self.makeButton(title: NSLocalizedString("Preset", comment: "The label of the preset action button"),
                                            image: UIImage.workoutImage(selected: false),
-                                           color: UIColor(named: "primaryButton3") ?? .systemBlue)
+                                           color: UIColor(named: "infoAccent") ?? .systemBlue)
 
             super.init(style: style, reuseIdentifier: reuseIdentifier)
 
