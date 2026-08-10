@@ -1444,16 +1444,17 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
 
         override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
-            // Same cool palette as the primary buttons, with red reserved for Suspend
+            // One uniform slate color across all three items, matching the reference design
+            let itemColor = SecondaryActionsTableViewCell.itemColor
             preMealButton = Self.makeButton(title: NSLocalizedString("Pre-Meal", comment: "The label of the pre-meal action button"),
                                             image: UIImage.preMealImage(selected: false),
-                                            color: .systemTeal)
+                                            color: itemColor)
             suspendButton = Self.makeButton(title: NSLocalizedString("Suspend", comment: "The label of the suspend insulin delivery action button"),
                                             image: UIImage(systemName: "pause.circle"),
-                                            color: .critical)
+                                            color: itemColor)
             settingsButton = Self.makeButton(title: NSLocalizedString("Settings", comment: "The label of the settings action button"),
                                              image: UIImage(systemName: "gearshape"),
-                                             color: .systemBlue)
+                                             color: itemColor)
 
             super.init(style: style, reuseIdentifier: reuseIdentifier)
 
@@ -1485,9 +1486,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
             fatalError("init(coder:) has not been implemented")
         }
 
+        static let itemColor = UIColor(named: "secondaryAction") ?? .secondaryLabel
+
         func setPreMeal(selected: Bool, enabled: Bool) {
             preMealButton.configuration?.image = UIImage.preMealImage(selected: selected)
-            preMealButton.configuration?.baseForegroundColor = selected ? .systemGreen : .systemTeal
+            preMealButton.configuration?.baseForegroundColor = selected ? .systemGreen : Self.itemColor
             preMealButton.isEnabled = enabled
             if selected {
                 preMealButton.accessibilityTraits.insert(.selected)

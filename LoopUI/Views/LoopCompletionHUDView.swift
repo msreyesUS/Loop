@@ -347,16 +347,10 @@ public final class StatusHeroView: UIView {
 
     private let titleLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 13, weight: .semibold)
-        label.textColor = .secondaryLabel
-        label.text = LocalizedString("Glucose", comment: "The title pill on the status screen glucose card")
+        label.font = .systemFont(ofSize: 14, weight: .semibold)
+        label.textColor = .glucoseTintColor
+        label.text = LocalizedString("Glucose", comment: "The title above the glucose value on the status screen glucose card")
         return label
-    }()
-
-    private let titlePill: UIView = {
-        let view = UIView()
-        view.backgroundColor = .tertiarySystemFill
-        return view
     }()
 
     /// A thin decorative ring around the glucose reading; purely visual, unrelated to loop state
@@ -396,11 +390,9 @@ public final class StatusHeroView: UIView {
         glucoseLabel.translatesAutoresizingMaskIntoConstraints = false
         infoStack.translatesAutoresizingMaskIntoConstraints = false
         eventualGlucoseLabel.translatesAutoresizingMaskIntoConstraints = false
-        titlePill.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        titlePill.addSubview(titleLabel)
-        addSubview(titlePill)
+        addSubview(titleLabel)
         addSubview(loopCompletionHUD)
         addSubview(glucoseLabel)
         addSubview(infoStack)
@@ -418,13 +410,11 @@ public final class StatusHeroView: UIView {
             loopCompletionHUD.centerXAnchor.constraint(equalTo: centerXAnchor),
             loopCompletionHUD.topAnchor.constraint(equalTo: topAnchor, constant: 14),
 
-            // The title pill sits inside the ring, above the glucose value
-            titleLabel.leadingAnchor.constraint(equalTo: titlePill.leadingAnchor, constant: 12),
-            titleLabel.trailingAnchor.constraint(equalTo: titlePill.trailingAnchor, constant: -12),
-            titleLabel.topAnchor.constraint(equalTo: titlePill.topAnchor, constant: 5),
-            titleLabel.bottomAnchor.constraint(equalTo: titlePill.bottomAnchor, constant: -5),
-            titlePill.centerXAnchor.constraint(equalTo: centerXAnchor),
-            titlePill.bottomAnchor.constraint(equalTo: glucoseLabel.topAnchor, constant: 10),
+            // The title sits inside the ring, spaced evenly above the glucose value just
+            // as the unit line is below it. The overlap constants compensate for the
+            // large font's built-in ascender/descender whitespace.
+            titleLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            titleLabel.bottomAnchor.constraint(equalTo: glucoseLabel.topAnchor, constant: 14),
 
             // The glucose value itself is centered in the ring; the trend/unit line
             // hangs below it so it doesn't drag the number off center
@@ -433,7 +423,7 @@ public final class StatusHeroView: UIView {
             glucoseLabel.widthAnchor.constraint(lessThanOrEqualTo: loopCompletionHUD.widthAnchor, constant: -36),
 
             infoStack.centerXAnchor.constraint(equalTo: loopCompletionHUD.centerXAnchor),
-            infoStack.topAnchor.constraint(equalTo: glucoseLabel.bottomAnchor, constant: -4),
+            infoStack.topAnchor.constraint(equalTo: glucoseLabel.bottomAnchor, constant: -16),
             infoStack.widthAnchor.constraint(lessThanOrEqualTo: loopCompletionHUD.widthAnchor, constant: -36),
 
             eventualGlucoseLabel.topAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 8),
@@ -451,8 +441,6 @@ public final class StatusHeroView: UIView {
 
     public override func layoutSubviews() {
         super.layoutSubviews()
-
-        titlePill.layer.cornerRadius = titlePill.bounds.height / 2
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
