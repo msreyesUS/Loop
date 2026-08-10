@@ -1174,6 +1174,13 @@ final class StatusTableViewController: LoopChartsTableViewController {
             return formatter
         }()
 
+        private lazy var axisValueFormatter: NumberFormatter = {
+            let formatter = NumberFormatter()
+            formatter.maximumFractionDigits = 1
+            formatter.minimumFractionDigits = 0
+            return formatter
+        }()
+
         override init(frame: CGRect) {
             super.init(frame: frame)
             isOpaque = false
@@ -1200,7 +1207,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
         override func draw(_ rect: CGRect) {
             let axisHeight: CGFloat = 14
-            let drawRect = CGRect(x: bounds.minX + 2, y: bounds.minY + 4, width: bounds.width - 4, height: bounds.height - axisHeight - 8)
+            // Reserve a right-hand gutter for the range value labels
+            let valueAxisWidth: CGFloat = 30
+            let drawRect = CGRect(x: bounds.minX + 2, y: bounds.minY + 4, width: bounds.width - valueAxisWidth - 4, height: bounds.height - axisHeight - 8)
 
             let all = historical + predicted
             let minDate = all.map(\.date).min() ?? Date(timeIntervalSinceNow: -TimeInterval(hours: 3))
@@ -1253,6 +1262,21 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 ]
                 let captionSize = caption.size(withAttributes: captionAttributes)
                 caption.draw(at: CGPoint(x: bandRect.maxX - captionSize.width - 4, y: bandRect.maxY - captionSize.height - 2), withAttributes: captionAttributes)
+
+                // Range values in the right-hand gutter, aligned with the band edges
+                let rangeValueAttributes: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium),
+                    .foregroundColor: UIColor.freshColor.resolvedColor(with: traitCollection),
+                ]
+                for bound in [targetRange.upperBound, targetRange.lowerBound] {
+                    guard let text = axisValueFormatter.string(from: NSNumber(value: bound)) else {
+                        continue
+                    }
+                    let label = text as NSString
+                    let size = label.size(withAttributes: rangeValueAttributes)
+                    let labelY = min(max(y(for: bound) - size.height / 2, bounds.minY), bounds.maxY - size.height)
+                    label.draw(at: CGPoint(x: bounds.maxX - size.width - 2, y: labelY), withAttributes: rangeValueAttributes)
+                }
             }
 
             func path(for samples: [(date: Date, value: Double)]) -> UIBezierPath {
