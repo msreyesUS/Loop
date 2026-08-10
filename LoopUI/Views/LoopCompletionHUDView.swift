@@ -413,17 +413,18 @@ public final class StatusHeroView: UIView {
         bottomConstraint.priority = UILayoutPriority(999)
 
         NSLayoutConstraint.activate([
+            loopCompletionHUD.widthAnchor.constraint(equalToConstant: LayoutConstants.ringDiameter),
+            loopCompletionHUD.heightAnchor.constraint(equalTo: loopCompletionHUD.widthAnchor),
+            loopCompletionHUD.centerXAnchor.constraint(equalTo: centerXAnchor),
+            loopCompletionHUD.topAnchor.constraint(equalTo: topAnchor, constant: 14),
+
+            // The title pill sits inside the ring, above the glucose value
             titleLabel.leadingAnchor.constraint(equalTo: titlePill.leadingAnchor, constant: 12),
             titleLabel.trailingAnchor.constraint(equalTo: titlePill.trailingAnchor, constant: -12),
             titleLabel.topAnchor.constraint(equalTo: titlePill.topAnchor, constant: 5),
             titleLabel.bottomAnchor.constraint(equalTo: titlePill.bottomAnchor, constant: -5),
             titlePill.centerXAnchor.constraint(equalTo: centerXAnchor),
-            titlePill.topAnchor.constraint(equalTo: topAnchor, constant: 14),
-
-            loopCompletionHUD.widthAnchor.constraint(equalToConstant: LayoutConstants.ringDiameter),
-            loopCompletionHUD.heightAnchor.constraint(equalTo: loopCompletionHUD.widthAnchor),
-            loopCompletionHUD.centerXAnchor.constraint(equalTo: centerXAnchor),
-            loopCompletionHUD.topAnchor.constraint(equalTo: titlePill.bottomAnchor, constant: 8),
+            titlePill.bottomAnchor.constraint(equalTo: glucoseLabel.topAnchor, constant: 10),
 
             // The glucose value itself is centered in the ring; the trend/unit line
             // hangs below it so it doesn't drag the number off center

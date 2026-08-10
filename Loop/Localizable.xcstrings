@@ -1449,9 +1449,6 @@
         }
       }
     },
-    "%1$@ · %2$@" : {
-      "comment" : "The format for the last bolus description. (1: localized insulin amount)(2: localized time)"
-    },
     "%1$@ %2$@" : {
       "comment" : "Format string combining carb entry quantity and absorption time emoji",
       "localizations" : {
@@ -23583,8 +23580,8 @@
         }
       }
     },
-    "Last bolus" : {
-      "comment" : "The title of the last bolus row"
+    "Last bolus %1$@ · %2$@" : {
+      "comment" : "The caption describing the last bolus below active insulin. (1: localized insulin amount)(2: localized time)"
     },
     "Launches CGM app" : {
       "comment" : "Glucose HUD accessibility hint",

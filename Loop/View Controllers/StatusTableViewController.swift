@@ -106,7 +106,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
         tableView.register(SecondaryActionsTableViewCell.self, forCellReuseIdentifier: SecondaryActionsTableViewCell.className)
         tableView.register(GlucoseChartTableViewCell.self, forCellReuseIdentifier: GlucoseChartTableViewCell.className)
         tableView.register(StatsTableViewCell.self, forCellReuseIdentifier: StatsTableViewCell.className)
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "LastBolusCell")
         tableView.register(BolusProgressTableViewCell.nib(), forCellReuseIdentifier: BolusProgressTableViewCell.className)
         tableView.register(AlertPermissionsDisabledWarningCell.self, forCellReuseIdentifier: AlertPermissionsDisabledWarningCell.className)
         tableView.register(MuteAlertsWarningCell.self, forCellReuseIdentifier: MuteAlertsWarningCell.className)
@@ -626,7 +625,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
             }
 
             self.updateStatsCell()
-            self.updateLastBolusCell()
 
             self.tableView.beginUpdates()
             if let hudView = self.hudView {
@@ -781,13 +779,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
         return formatter
     }()
 
-    // MARK: - Stats Section Data
-
-    private enum StatsRow: Int, CaseIterable {
-        case metrics = 0
-        case lastBolus
-    }
-
     // MARK: - Loop Status Section Data
 
     private enum StatusRow: Int, CaseIterable {
@@ -853,6 +844,15 @@ final class StatusTableViewController: LoopChartsTableViewController {
         cell.iobValueLabel.text = currentIOBDescription ?? placeholder
         cell.cobValueLabel.text = currentCOBDescription ?? placeholder
         cell.basalValueLabel.text = netBasalDescription ?? placeholder
+
+        // The last bolus belongs with active insulin
+        if let bolus = lastManualBolus,
+           let volumeString = insulinFormatter.string(from: HKQuantity(unit: .internationalUnit(), doubleValue: bolus.deliveredUnits ?? bolus.programmedUnits))
+        {
+            cell.iobCaptionLabel.text = String(format: NSLocalizedString("Last bolus %1$@ · %2$@", comment: "The caption describing the last bolus below active insulin. (1: localized insulin amount)(2: localized time)"), volumeString, bolusTimeFormatter.string(from: bolus.startDate))
+        } else {
+            cell.iobCaptionLabel.text = " "
+        }
     }
 
     private func configureChartCell(_ cell: GlucoseChartTableViewCell) {
@@ -868,37 +868,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
     }
 
     private func updateStatsCell() {
-        if let cell = tableView.cellForRow(at: IndexPath(row: StatsRow.metrics.rawValue, section: Section.stats.rawValue)) as? StatsTableViewCell {
+        if let cell = tableView.cellForRow(at: IndexPath(row: 0, section: Section.stats.rawValue)) as? StatsTableViewCell {
             configureStatsCell(cell)
-        }
-    }
-
-    private func configureLastBolusCell(_ cell: UITableViewCell) {
-        var content = UIListContentConfiguration.valueCell()
-        content.text = NSLocalizedString("Last bolus", comment: "The title of the last bolus row")
-
-        if let bolus = lastManualBolus,
-           let volumeString = insulinFormatter.string(from: HKQuantity(unit: .internationalUnit(), doubleValue: bolus.deliveredUnits ?? bolus.programmedUnits))
-        {
-            content.secondaryText = String(format: NSLocalizedString("%1$@ · %2$@", comment: "The format for the last bolus description. (1: localized insulin amount)(2: localized time)"), volumeString, bolusTimeFormatter.string(from: bolus.startDate))
-        } else {
-            content.secondaryText = "—"
-        }
-
-        cell.contentConfiguration = content
-        cell.backgroundColor = .clear
-        cell.selectionStyle = .none
-
-        var background = UIBackgroundConfiguration.clear()
-        background.backgroundColor = .systemBackground
-        background.cornerRadius = 14
-        background.backgroundInsets = NSDirectionalEdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
-        cell.backgroundConfiguration = background
-    }
-
-    private func updateLastBolusCell() {
-        if let cell = tableView.cellForRow(at: IndexPath(row: StatsRow.lastBolus.rawValue, section: Section.stats.rawValue)) {
-            configureLastBolusCell(cell)
         }
     }
 
@@ -1028,7 +999,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         case .chart:
             return 1
         case .stats:
-            return StatsRow.allCases.count
+            return 1
         case .hud:
             return shouldShowHUD ? 1 : 0
         case .status:
@@ -1038,10 +1009,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
     }
 
-    /// A rounded card container used by the redesigned status cells
+    /// A rounded, translucent card container used by the redesigned status cells;
+    /// partially transparent so the background gradient shows through
     private static func makeCardView(cornerRadius: CGFloat = 20) -> UIView {
         let card = UIView()
-        card.backgroundColor = .systemBackground
+        card.backgroundColor = .systemBackground.withAlphaComponent(0.55)
         card.layer.cornerRadius = cornerRadius
         card.layer.cornerCurve = .continuous
         card.translatesAutoresizingMaskIntoConstraints = false
@@ -1289,6 +1261,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
         let iobValueLabel = UILabel()
         let cobValueLabel = UILabel()
         let basalValueLabel = UILabel()
+        let iobCaptionLabel = UILabel()
+        let cobCaptionLabel = UILabel()
+        let basalCaptionLabel = UILabel()
 
         override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
             super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -1296,12 +1271,13 @@ final class StatusTableViewController: LoopChartsTableViewController {
             selectionStyle = .none
             backgroundColor = .clear
 
-            // Three separate small cards, one per metric
+            // Three separate small cards, one per metric, each with an optional caption
+            // line (e.g. the last bolus under Active Insulin)
             let cards = [
-                (NSLocalizedString("Active Insulin", comment: "The title of the active insulin stats column"), iobValueLabel),
-                (NSLocalizedString("Active Carbs", comment: "The title of the active carbs stats column"), cobValueLabel),
-                (NSLocalizedString("Basal", comment: "The title of the basal stats column"), basalValueLabel),
-            ].map { (title, valueLabel) -> UIView in
+                (NSLocalizedString("Active Insulin", comment: "The title of the active insulin stats column"), iobValueLabel, iobCaptionLabel),
+                (NSLocalizedString("Active Carbs", comment: "The title of the active carbs stats column"), cobValueLabel, cobCaptionLabel),
+                (NSLocalizedString("Basal", comment: "The title of the basal stats column"), basalValueLabel, basalCaptionLabel),
+            ].map { (title, valueLabel, captionLabel) -> UIView in
                 let titleLabel = UILabel()
                 titleLabel.font = .systemFont(ofSize: 12)
                 titleLabel.textColor = .secondaryLabel
@@ -1311,10 +1287,16 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 valueLabel.font = .monospacedDigitSystemFont(ofSize: 18, weight: .semibold)
                 valueLabel.textColor = .label
 
-                let column = UIStackView(arrangedSubviews: [titleLabel, valueLabel])
+                captionLabel.font = .systemFont(ofSize: 10)
+                captionLabel.textColor = .tertiaryLabel
+                captionLabel.adjustsFontSizeToFitWidth = true
+                captionLabel.minimumScaleFactor = 0.7
+                captionLabel.text = " "
+
+                let column = UIStackView(arrangedSubviews: [titleLabel, valueLabel, captionLabel])
                 column.axis = .vertical
                 column.alignment = .center
-                column.spacing = 4
+                column.spacing = 3
                 column.translatesAutoresizingMaskIntoConstraints = false
 
                 let card = StatusTableViewController.makeCardView(cornerRadius: 14)
@@ -1322,8 +1304,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 NSLayoutConstraint.activate([
                     column.centerXAnchor.constraint(equalTo: card.centerXAnchor),
                     column.leadingAnchor.constraint(greaterThanOrEqualTo: card.leadingAnchor, constant: 6),
-                    column.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
-                    column.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -12),
+                    column.topAnchor.constraint(equalTo: card.topAnchor, constant: 10),
+                    column.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -10),
                 ])
                 return card
             }
@@ -1462,15 +1444,16 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
 
         override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+            // Same cool palette as the primary buttons, with red reserved for Suspend
             preMealButton = Self.makeButton(title: NSLocalizedString("Pre-Meal", comment: "The label of the pre-meal action button"),
                                             image: UIImage.preMealImage(selected: false),
-                                            color: .label)
+                                            color: .systemTeal)
             suspendButton = Self.makeButton(title: NSLocalizedString("Suspend", comment: "The label of the suspend insulin delivery action button"),
                                             image: UIImage(systemName: "pause.circle"),
                                             color: .critical)
             settingsButton = Self.makeButton(title: NSLocalizedString("Settings", comment: "The label of the settings action button"),
                                              image: UIImage(systemName: "gearshape"),
-                                             color: .label)
+                                             color: .systemBlue)
 
             super.init(style: style, reuseIdentifier: reuseIdentifier)
 
@@ -1504,7 +1487,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
         func setPreMeal(selected: Bool, enabled: Bool) {
             preMealButton.configuration?.image = UIImage.preMealImage(selected: selected)
-            preMealButton.configuration?.baseForegroundColor = selected ? .carbTintColor : .label
+            preMealButton.configuration?.baseForegroundColor = selected ? .systemGreen : .systemTeal
             preMealButton.isEnabled = enabled
             if selected {
                 preMealButton.accessibilityTraits.insert(.selected)
@@ -1624,18 +1607,10 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
             return cell
         case .stats:
-            switch StatsRow(rawValue: indexPath.row)! {
-            case .metrics:
-                let cell = tableView.dequeueReusableCell(withIdentifier: StatsTableViewCell.className, for: indexPath) as! StatsTableViewCell
-                configureStatsCell(cell)
+            let cell = tableView.dequeueReusableCell(withIdentifier: StatsTableViewCell.className, for: indexPath) as! StatsTableViewCell
+            configureStatsCell(cell)
 
-                return cell
-            case .lastBolus:
-                let cell = tableView.dequeueReusableCell(withIdentifier: "LastBolusCell", for: indexPath)
-                configureLastBolusCell(cell)
-
-                return cell
-            }
+            return cell
         case .hud:
             let cell = tableView.dequeueReusableCell(withIdentifier: HUDViewTableViewCell.className, for: indexPath) as! HUDViewTableViewCell
             cell.backgroundColor = .clear
