@@ -407,6 +407,22 @@ final class StatusTableViewController: LoopChartsTableViewController {
         refreshContext = RefreshContext.all
     }
     
+    /// A benign status highlight shown in the CGM pill when the CGM has nothing to
+    /// report; the big glucose number already covers the reading, so the pill carries
+    /// sensor state instead. Real highlights (searching, warmup, signal loss) take
+    /// precedence via the existing mechanism.
+    private struct SensorOKStatusHighlight: DeviceStatusHighlight {
+        var localizedMessage: String {
+            NSLocalizedString("Sensor OK", comment: "Sensor status shown when the CGM has nothing to report")
+        }
+        var imageName: String {
+            "sensor.tag.radiowaves.forward"
+        }
+        var state: DeviceStatusHighlightState {
+            .normalCGM
+        }
+    }
+
     private func registerCGMManager() {
         deviceManager.cgmManager?.removeStatusObserver(self)
         deviceManager.cgmManager?.addStatusObserver(self, queue: .main)
@@ -636,7 +652,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                                                             wasUserEntered: glucose.wasUserEntered,
                                                             isDisplayOnly: glucose.isDisplayOnly)
                 }
-                hudView.cgmStatusHUD.presentStatusHighlight(self.deviceManager.cgmStatusHighlight)
+                hudView.cgmStatusHUD.presentStatusHighlight(self.deviceManager.cgmStatusHighlight ?? SensorOKStatusHighlight())
                 hudView.cgmStatusHUD.presentStatusBadge(self.deviceManager.cgmStatusBadge)
                 hudView.cgmStatusHUD.lifecycleProgress = self.deviceManager.cgmLifecycleProgress
 
@@ -2407,7 +2423,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
     private func configureCGMManagerHUDViews() {
         if let hudView = hudView {
-            hudView.cgmStatusHUD.presentStatusHighlight(deviceManager.cgmStatusHighlight)
+            hudView.cgmStatusHUD.presentStatusHighlight(deviceManager.cgmStatusHighlight ?? SensorOKStatusHighlight())
             hudView.cgmStatusHUD.lifecycleProgress = deviceManager.cgmLifecycleProgress
         }
     }

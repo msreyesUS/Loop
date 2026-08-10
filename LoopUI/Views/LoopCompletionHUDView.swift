@@ -266,7 +266,7 @@ extension LoopCompletionHUDView {
 public final class StatusHeroView: UIView {
 
     private enum LayoutConstants {
-        static let ringDiameter: CGFloat = 170
+        static let ringDiameter: CGFloat = 192
         static let glucoseFontSize: CGFloat = 92
         static let trendIconPointSize: CGFloat = 20
     }
