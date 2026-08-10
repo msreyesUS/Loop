@@ -44,9 +44,13 @@ public final class LoopCompletionHUDView: BaseHUDView {
         super.init(coder: aDecoder)
     }
 
+    /// Notifies interested views (e.g. StatusHeroView) when freshness changes over time
+    var freshnessDidChange: (() -> Void)?
+
     private(set) var freshness = LoopCompletionFreshness.stale {
         didSet {
             updateTintColor()
+            freshnessDidChange?()
         }
     }
 
@@ -283,8 +287,18 @@ public final class StatusHeroView: UIView {
         }
     }
 
+    /// The current glucose range category, used to tint the view's background.
+    /// The tint is independent of the ring color: the background says how glucose is doing,
+    /// the ring says whether the loop is running.
+    public var glucoseRangeCategory: GlucoseRangeCategory? {
+        didSet {
+            updateBackgroundTint()
+        }
+    }
+
     private lazy var viewModel = CGMStatusHUDViewModel(staleGlucoseValueHandler: { [weak self] in
         self?.deltaString = nil
+        self?.glucoseRangeCategory = nil
         self?.updateGlucoseDisplay()
     })
 
@@ -366,7 +380,21 @@ public final class StatusHeroView: UIView {
             eventualGlucoseLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16),
         ])
 
+        loopCompletionHUD.freshnessDidChange = { [weak self] in
+            self?.updateBackgroundTint()
+        }
+
         updateGlucoseDisplay()
+    }
+
+    private func updateBackgroundTint() {
+        // When the loop is stale, drop the tint to neutral so the red ring is the only
+        // red element on screen: a red ring on a red field must never happen.
+        if loopCompletionHUD.freshness == .stale {
+            backgroundColor = nil
+        } else {
+            backgroundColor = glucoseRangeCategory?.backgroundTintColor
+        }
     }
 
     public func setGlucoseQuantity(_ glucoseQuantity: Double,

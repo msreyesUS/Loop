@@ -22,6 +22,10 @@ extension UIColor {
     @nonobjc public static let loopAccent = UIColor(named: "accent") ?? systemBlue
     
     @nonobjc public static let warning = UIColor(named: "warning") ?? systemYellow
+
+    @nonobjc public static let criticalBackground = UIColor(named: "criticalBackground") ?? systemRed.withAlphaComponent(0.15)
+
+    @nonobjc public static let warningBackground = UIColor(named: "warningBackground") ?? systemYellow.withAlphaComponent(0.15)
 }
 
 // MARK: - Context for colors

@@ -601,6 +601,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
                     } else {
                         heroStatusView.deltaString = nil
                     }
+                    heroStatusView.glucoseRangeCategory = glucoseDisplay?.glucoseRangeCategory
+                } else {
+                    heroStatusView.glucoseRangeCategory = nil
                 }
 
                 if let eventualGlucose = self.eventualGlucoseDescription {

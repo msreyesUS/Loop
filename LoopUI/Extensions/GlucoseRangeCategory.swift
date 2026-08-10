@@ -30,4 +30,17 @@ extension GlucoseRangeCategory {
             return .warning
         }
     }
+
+    /// A muted background tint following the same severity mapping as `glucoseColor`:
+    /// urgentLow and belowRange are critical, aboveRange is warning, the rest are neutral.
+    public var backgroundTintColor: UIColor? {
+        switch self {
+        case .normal, .high, .low:
+            return nil
+        case .urgentLow, .belowRange:
+            return .criticalBackground
+        case .aboveRange:
+            return .warningBackground
+        }
+    }
 }
