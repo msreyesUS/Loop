@@ -1196,13 +1196,13 @@ final class StatusTableViewController: LoopChartsTableViewController {
                                       width: drawRect.width,
                                       height: y(for: targetRange.lowerBound) - y(for: targetRange.upperBound))
                 let bandPath = UIBezierPath(roundedRect: bandRect, cornerRadius: 3)
-                UIColor.systemGreen.withAlphaComponent(0.12).resolvedColor(with: traitCollection).setFill()
+                UIColor.freshColor.withAlphaComponent(0.15).resolvedColor(with: traitCollection).setFill()
                 bandPath.fill()
 
                 let caption = NSLocalizedString("Target Range", comment: "Caption on the glucose chart target range band") as NSString
                 let captionAttributes: [NSAttributedString.Key: Any] = [
                     .font: UIFont.systemFont(ofSize: 8, weight: .medium),
-                    .foregroundColor: UIColor.systemGreen.resolvedColor(with: traitCollection),
+                    .foregroundColor: UIColor.freshColor.resolvedColor(with: traitCollection),
                 ]
                 let captionSize = caption.size(withAttributes: captionAttributes)
                 caption.draw(at: CGPoint(x: bandRect.maxX - captionSize.width - 4, y: bandRect.maxY - captionSize.height - 2), withAttributes: captionAttributes)
@@ -1222,8 +1222,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 return path
             }
 
-            // History line and endpoint dot
-            let lineColor = UIColor.systemBlue.resolvedColor(with: traitCollection)
+            // History line and endpoint dot, in the palette's info accent
+            let lineColor = (UIColor(named: "infoAccent") ?? .systemBlue).resolvedColor(with: traitCollection)
             if historical.count > 1 {
                 let historyPath = path(for: historical)
                 historyPath.lineWidth = 2
@@ -1482,16 +1482,16 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
 
         override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
-            // Cool palette matching the reference design: teal / green / blue
+            // Palette button colors: the slate trio
             bolusButton = Self.makeButton(title: NSLocalizedString("Bolus", comment: "The label of the bolus action button"),
                                           image: UIImage(named: "bolus"),
-                                          color: .systemTeal)
+                                          color: UIColor(named: "primaryButton1") ?? .systemTeal)
             carbsButton = Self.makeButton(title: NSLocalizedString("Carbs", comment: "The label of the carb entry action button"),
                                           image: UIImage(named: "carbs"),
-                                          color: .systemGreen)
+                                          color: UIColor(named: "primaryButton2") ?? .systemGreen)
             presetButton = Self.makeButton(title: NSLocalizedString("Preset", comment: "The label of the preset action button"),
                                            image: UIImage.workoutImage(selected: false),
-                                           color: .systemBlue)
+                                           color: UIColor(named: "primaryButton3") ?? .systemBlue)
 
             super.init(style: style, reuseIdentifier: reuseIdentifier)
 
@@ -1610,7 +1610,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         func setPreMeal(selected: Bool, enabled: Bool) {
             // Keep the outline icon in both states; only the color signals the toggle.
             // The filled "selected" asset reads as inverted on glass.
-            preMealButton.configuration?.baseForegroundColor = selected ? .systemGreen : Self.itemColor
+            preMealButton.configuration?.baseForegroundColor = selected ? .freshColor : Self.itemColor
             preMealButton.isEnabled = enabled
             if selected {
                 preMealButton.accessibilityTraits.insert(.selected)
