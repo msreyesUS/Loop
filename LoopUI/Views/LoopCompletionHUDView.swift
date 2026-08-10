@@ -359,7 +359,7 @@ public final class StatusHeroView: UIView {
     private let rangeRingLayer: CAShapeLayer = {
         let layer = CAShapeLayer()
         layer.fillColor = UIColor.clear.cgColor
-        layer.lineWidth = 8
+        layer.lineWidth = 12
         return layer
     }()
 
@@ -410,14 +410,16 @@ public final class StatusHeroView: UIView {
         // The bottom constraint yields (999) rather than conflicting with the temporary
         // UIView-Encapsulated-Layout-Height constraint during table view self-sizing;
         // everything else in the vertical chain stays required so the ring keeps its size.
-        let bottomConstraint = eventualGlucoseLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16)
+        // Equal top and bottom padding keeps the ring vertically centered in the card;
+        // the eventual glucose label floats within the bottom padding.
+        let bottomConstraint = bottomAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 32)
         bottomConstraint.priority = UILayoutPriority(999)
 
         NSLayoutConstraint.activate([
             loopCompletionHUD.widthAnchor.constraint(equalToConstant: LayoutConstants.ringDiameter),
             loopCompletionHUD.heightAnchor.constraint(equalTo: loopCompletionHUD.widthAnchor),
             loopCompletionHUD.centerXAnchor.constraint(equalTo: centerXAnchor),
-            loopCompletionHUD.topAnchor.constraint(equalTo: topAnchor, constant: 14),
+            loopCompletionHUD.topAnchor.constraint(equalTo: topAnchor, constant: 32),
 
             // The title sits inside the ring, spaced evenly above the glucose value just
             // as the unit line is below it. The overlap constants compensate for the
@@ -435,7 +437,7 @@ public final class StatusHeroView: UIView {
             infoStack.topAnchor.constraint(equalTo: glucoseLabel.bottomAnchor, constant: -16),
             infoStack.widthAnchor.constraint(lessThanOrEqualTo: loopCompletionHUD.widthAnchor, constant: -36),
 
-            eventualGlucoseLabel.topAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 8),
+            eventualGlucoseLabel.topAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 7),
             eventualGlucoseLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
             eventualGlucoseLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 8),
             bottomConstraint,
@@ -453,7 +455,7 @@ public final class StatusHeroView: UIView {
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        rangeRingLayer.path = UIBezierPath(ovalIn: loopCompletionHUD.frame.insetBy(dx: 4, dy: 4)).cgPath
+        rangeRingLayer.path = UIBezierPath(ovalIn: loopCompletionHUD.frame.insetBy(dx: 6, dy: 6)).cgPath
         rangeRingLayer.strokeColor = rangeRingColor.resolvedColor(with: traitCollection).cgColor
         CATransaction.commit()
     }

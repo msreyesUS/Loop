@@ -401,9 +401,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
         return !landscapeMode
     }
 
-    private var shouldShowStatus: Bool {
-        return !landscapeMode && statusRowMode.hasRow
-    }
 
     override func glucoseUnitDidChange() {
         log.debug("[reloadData] for HealthKit unit preference change")
@@ -797,6 +794,39 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
     private var statusRowMode = StatusRowMode.hidden
 
+    /// A secondary status row surfacing an active override/pre-meal when the primary row
+    /// is occupied by something else (e.g. No Recent Glucose)
+    private var overrideStatusRowMode = StatusRowMode.hidden
+
+    private func determineOverrideStatusRowMode(primaryMode: StatusRowMode) -> StatusRowMode {
+        // When the primary row already shows the override, don't repeat it
+        if case .scheduleOverrideEnabled = primaryMode {
+            return .hidden
+        }
+
+        if let scheduleOverride = deviceManager.loopManager.settings.scheduleOverride,
+            !scheduleOverride.hasFinished()
+        {
+            return .scheduleOverrideEnabled(scheduleOverride)
+        }
+
+        if let premealOverride = deviceManager.loopManager.settings.preMealOverride,
+            !premealOverride.hasFinished()
+        {
+            return .scheduleOverrideEnabled(premealOverride)
+        }
+
+        return .hidden
+    }
+
+    /// The status row mode backing a given row of the status section
+    private func statusRowMode(forRow row: Int) -> StatusRowMode {
+        if statusRowMode.hasRow && row == 0 {
+            return statusRowMode
+        }
+        return overrideStatusRowMode
+    }
+
     private func determineStatusRowMode() -> StatusRowMode {
         let statusRowMode: StatusRowMode
 
@@ -827,6 +857,15 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
 
         return statusRowMode
+    }
+
+    /// Applies the translucent rounded card background used across the status screen
+    private func applyCardBackground(to cell: UITableViewCell) {
+        var background = UIBackgroundConfiguration.clear()
+        background.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.62)
+        background.cornerRadius = 14
+        background.backgroundInsets = NSDirectionalEdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
+        cell.backgroundConfiguration = background
     }
 
     private func configureStatsCell(_ cell: StatsTableViewCell) {
@@ -880,18 +919,23 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
     private func updateBannerAndHUDandStatusRows(statusRowMode: StatusRowMode, newSize: CGSize?, animated: Bool) {
         let hudWasVisible = self.shouldShowHUD
-        let statusWasVisible = self.shouldShowStatus
+        let statusWasVisible = !landscapeMode && self.statusRowMode.hasRow
+        let overrideWasVisible = !landscapeMode && self.overrideStatusRowMode.hasRow
+        let oldOverrideRow = statusWasVisible ? 1 : 0
 
         let oldStatusRowMode = self.statusRowMode
 
         self.statusRowMode = statusRowMode
+        self.overrideStatusRowMode = determineOverrideStatusRowMode(primaryMode: statusRowMode)
 
         if let newSize = newSize {
             landscapeMode = newSize.width > newSize.height
         }
 
         let hudIsVisible = self.shouldShowHUD
-        let statusIsVisible = self.shouldShowStatus
+        let statusIsVisible = !landscapeMode && self.statusRowMode.hasRow
+        let overrideIsVisible = !landscapeMode && self.overrideStatusRowMode.hasRow
+        let newOverrideRow = statusIsVisible ? 1 : 0
 
         hudView?.cgmStatusHUD?.isVisible = hudIsVisible
 
@@ -931,6 +975,19 @@ final class StatusTableViewController: LoopChartsTableViewController {
         case (true, false):
             tableView.deleteRows(at: [statusIndexPath], with: animated ? .top : .none)
         default:
+            break
+        }
+
+        // Secondary override row (deletes address the old index space, inserts the new)
+        switch (overrideWasVisible, overrideIsVisible) {
+        case (true, true):
+            tableView.deleteRows(at: [IndexPath(row: oldOverrideRow, section: Section.status.rawValue)], with: .none)
+            tableView.insertRows(at: [IndexPath(row: newOverrideRow, section: Section.status.rawValue)], with: .none)
+        case (false, true):
+            tableView.insertRows(at: [IndexPath(row: newOverrideRow, section: Section.status.rawValue)], with: animated ? .bottom : .none)
+        case (true, false):
+            tableView.deleteRows(at: [IndexPath(row: oldOverrideRow, section: Section.status.rawValue)], with: animated ? .top : .none)
+        case (false, false):
             break
         }
 
@@ -993,7 +1050,10 @@ final class StatusTableViewController: LoopChartsTableViewController {
         case .hud:
             return shouldShowHUD ? 1 : 0
         case .status:
-            return shouldShowStatus ? StatusRow.allCases.count : 0
+            guard !landscapeMode else {
+                return 0
+            }
+            return (statusRowMode.hasRow ? 1 : 0) + (overrideStatusRowMode.hasRow ? 1 : 0)
         case .actions:
             return ActionsRow.allCases.count
         }
@@ -1682,12 +1742,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 cell.titleLabel.text = nil
                 cell.subtitleLabel.text = nil
                 cell.accessoryView = nil
+                applyCardBackground(to: cell)
                 return cell
             }
 
-            switch StatusRow(rawValue: indexPath.row)! {
-            case .status:
-                switch statusRowMode {
+            switch statusRowMode(forRow: indexPath.row) {
                 case .hidden:
                     let cell = getTitleSubtitleCell()
                     return cell
@@ -1743,6 +1802,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                     progressCell.tintColor = .insulinTintColor
                     progressCell.deliveredUnits = bolusProgressReporter?.progress.deliveredUnits
                     progressCell.backgroundColor = .clear
+                    applyCardBackground(to: progressCell)
                     return progressCell
                 case .cancelingBolus:
                     let cell = getTitleSubtitleCell()
@@ -1769,6 +1829,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                     let cell = tableView.dequeueReusableCell(withIdentifier: IconTitleSubtitleTableViewCell.className, for: indexPath) as! IconTitleSubtitleTableViewCell
                     cell.selectionStyle = .default
                     cell.backgroundColor = .clear
+                    applyCardBackground(to: cell)
                     cell.iconImageView.image = UIImage(systemName: "exclamationmark.circle.fill")
                     cell.iconImageView.tintColor = .warning
                     cell.iconImageView.contentMode = .scaleAspectFit
@@ -1786,7 +1847,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
                     imageView.tintColor = .glucoseTintColor
                     cell.accessoryView = imageView
                     return cell
-                }
             }
         case .actions:
             switch ActionsRow(rawValue: indexPath.row)! {
@@ -1866,11 +1926,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
         case .hero, .stats, .hud, .actions:
             break
         case .status:
-            switch StatusRow(rawValue: indexPath.row)! {
-            case .status:
                 tableView.deselectRow(at: indexPath, animated: true)
 
-                switch statusRowMode {
+                switch statusRowMode(forRow: indexPath.row) {
                 case .pumpSuspended(let resuming) where !resuming:
                     updateBannerAndHUDandStatusRows(statusRowMode: .pumpSuspended(resuming: true) , newSize: nil, animated: true)
                     deviceManager.pumpManager?.resumeDelivery() { (error) in
@@ -1924,7 +1982,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 default:
                     break
                 }
-            }
         }
     }
 
