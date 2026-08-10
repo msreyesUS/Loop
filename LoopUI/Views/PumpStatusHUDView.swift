@@ -14,11 +14,52 @@ import LoopKitUI
 public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
     
     @IBOutlet public weak var basalRateHUD: BasalRateHUDView!
-    
+
     @IBOutlet public weak var pumpManagerProvidedHUD: BaseHUDView!
-        
+
     override public var orderPriority: HUDViewOrderPriority {
         return 3
+    }
+
+    /// Hides the basal rate dial, freeing the space for the expiration label
+    public var showsBasalRate: Bool = true {
+        didSet {
+            basalRateHUD?.isHidden = !showsBasalRate
+        }
+    }
+
+    /// A small label shown alongside the pump manager's HUD (e.g. pod expiration)
+    public let expirationLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.textColor = .secondaryLabel
+        label.numberOfLines = 2
+        label.textAlignment = .center
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.8
+        label.isHidden = true
+        return label
+    }()
+
+    /// Sets the expiration text; nil hides the label
+    public func setExpiration(text: String?) {
+        expirationLabel.text = text
+        updateExpirationVisibility()
+    }
+
+    private func updateExpirationVisibility() {
+        expirationLabel.isHidden = expirationLabel.text == nil || statusStackView.arrangedSubviews.contains(statusHighlightView)
+    }
+
+    override public func awakeFromNib() {
+        super.awakeFromNib()
+
+        // The expiration label sits where the basal dial was, before the pod view
+        if let basalIndex = statusStackView.arrangedSubviews.firstIndex(of: basalRateHUD) {
+            statusStackView.insertArrangedSubview(expirationLabel, at: basalIndex + 1)
+        } else {
+            statusStackView.addArrangedSubview(expirationLabel)
+        }
     }
     
     public override init(frame: CGRect) {
@@ -50,7 +91,10 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
         // need to also hide these view, since they will be added back to the stack at some point
         basalRateHUD.isHidden = true
         statusStackView.removeArrangedSubview(basalRateHUD)
-        
+
+        expirationLabel.isHidden = true
+        statusStackView.removeArrangedSubview(expirationLabel)
+
         if let pumpManagerProvidedHUD = pumpManagerProvidedHUD {
             pumpManagerProvidedHUD.isHidden = true
             statusStackView.removeArrangedSubview(pumpManagerProvidedHUD)
@@ -65,10 +109,13 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
         }
         
         super.dismissStatusHighlight()
-        
+
         statusStackView.addArrangedSubview(basalRateHUD)
-        basalRateHUD.isHidden = false
-        
+        basalRateHUD.isHidden = !showsBasalRate
+
+        statusStackView.addArrangedSubview(expirationLabel)
+        updateExpirationVisibility()
+
         if let pumpManagerProvidedHUD = pumpManagerProvidedHUD {
             statusStackView.addArrangedSubview(pumpManagerProvidedHUD)
             pumpManagerProvidedHUD.isHidden = false

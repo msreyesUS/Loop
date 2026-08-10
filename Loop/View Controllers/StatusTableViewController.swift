@@ -688,6 +688,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 hudView.pumpStatusHUD.presentStatusHighlight(self.deviceManager.pumpStatusHighlight)
                 hudView.pumpStatusHUD.presentStatusBadge(self.deviceManager.pumpStatusBadge)
                 hudView.pumpStatusHUD.lifecycleProgress = self.deviceManager.pumpLifecycleProgress
+                self.updatePodExpiration(on: hudView)
             }
 
             // Hero glucose display
@@ -817,6 +818,25 @@ final class StatusTableViewController: LoopChartsTableViewController {
         formatter.timeStyle = .short
         return formatter
     }()
+
+    private lazy var podExpirationFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("EEE jmm")
+        return formatter
+    }()
+
+    /// Shows the pod expiration in the pump pill, derived from the lifecycle progress
+    /// (percent of the pod's 72-hour nominal life)
+    private func updatePodExpiration(on hudView: StatusBarHUDView) {
+        if let progress = deviceManager.pumpLifecycleProgress, progress.percentComplete < 1 {
+            let nominalPodLife = TimeInterval(hours: 72)
+            let remaining = (1 - progress.percentComplete) * nominalPodLife
+            let expiration = Date(timeIntervalSinceNow: remaining)
+            hudView.pumpStatusHUD.setExpiration(text: podExpirationFormatter.string(from: expiration))
+        } else {
+            hudView.pumpStatusHUD.setExpiration(text: nil)
+        }
+    }
 
     private lazy var netBasalFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
@@ -2449,7 +2469,10 @@ final class StatusTableViewController: LoopChartsTableViewController {
             hudView.cgmStatusHUD.stateColors = .cgmStatus
             hudView.cgmStatusHUD.tintColor = .label
             hudView.pumpStatusHUD.stateColors = .pumpStatus
-            hudView.pumpStatusHUD.tintColor = .insulinTintColor
+            hudView.pumpStatusHUD.tintColor = .pumpStatusNormal
+            // The pod pill shows expiration instead of the basal dial; net basal
+            // lives in the stats card
+            hudView.pumpStatusHUD.showsBasalRate = false
 
             refreshContext.update(with: .status)
             log.debug("[reloadData] after hudView loaded")
@@ -2468,6 +2491,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             }
             hudView.pumpStatusHUD.presentStatusHighlight(deviceManager.pumpStatusHighlight)
             hudView.pumpStatusHUD.lifecycleProgress = deviceManager.pumpLifecycleProgress
+            updatePodExpiration(on: hudView)
         }
     }
 

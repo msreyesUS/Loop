@@ -57,6 +57,9 @@ public class StatusHighlightHUDView: UIView, NibLoadable {
         stackView.translatesAutoresizingMaskIntoConstraints = false
         self.addSubview(stackView)
 
+        // Lighter weight to match the status screen's card titles
+        messageLabel.font = .systemFont(ofSize: 14, weight: .medium)
+
         // Center the icon and label as a group rather than stretching them across the
         // container, so short messages don't leave a lopsided gap
         NSLayoutConstraint.activate([

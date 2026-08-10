@@ -54,7 +54,7 @@ extension UIColor {
 
     @nonobjc public static let insulinTintColor = insulin
     
-    @nonobjc public static let pumpStatusNormal = insulin
+    @nonobjc public static let pumpStatusNormal = UIColor(named: "infoAccent") ?? insulin
     
     @nonobjc public static let staleColor = critical
     

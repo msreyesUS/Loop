@@ -19,7 +19,7 @@ extension DeviceLifecycleProgressState {
         case .normalCGM:
             return .glucose
         case .normalPump:
-            return .insulin
+            return .pumpStatusNormal
         case .warning:
             return .warning
         }
