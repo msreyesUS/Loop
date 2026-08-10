@@ -33590,6 +33590,9 @@
         }
       }
     },
+    "Sensor\nActive" : {
+      "comment" : "Sensor status shown when the CGM has nothing to report"
+    },
     "Sensor Failed" : {
       "localizations" : {
         "da" : {
@@ -33641,9 +33644,6 @@
           }
         }
       }
-    },
-    "Sensor OK" : {
-      "comment" : "Sensor status shown when the CGM has nothing to report"
     },
     "Services" : {
       "comment" : "The title of the services section in settings",

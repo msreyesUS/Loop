@@ -332,6 +332,14 @@ final class StatusTableViewController: LoopChartsTableViewController {
         cell.bolusButton.isEnabled = isPumpOnboarded
         cell.carbsButton.isEnabled = isPumpOnboarded
         cell.presetButton.isEnabled = workoutModeAllowed
+
+        // While a preset is active, the Preset button shifts to the purple accent
+        let presetActive = workoutMode == true
+        let presetColor = presetActive
+            ? (UIColor(named: "purpleAccent") ?? .systemPurple)
+            : (UIColor(named: "infoAccent") ?? .systemBlue)
+        cell.presetButton.configuration?.baseBackgroundColor = presetColor
+        cell.presetButton.tintColor = presetColor
     }
 
     private func configureSecondaryActionsCell(_ cell: SecondaryActionsTableViewCell) {
@@ -413,7 +421,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
     /// precedence via the existing mechanism.
     private struct SensorOKStatusHighlight: DeviceStatusHighlight {
         var localizedMessage: String {
-            NSLocalizedString("Sensor OK", comment: "Sensor status shown when the CGM has nothing to report")
+            NSLocalizedString("Sensor\nActive", comment: "Sensor status shown when the CGM has nothing to report")
         }
         var imageName: String {
             "sensor.tag.radiowaves.forward"
