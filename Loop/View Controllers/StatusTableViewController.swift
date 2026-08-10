@@ -678,18 +678,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 }
             }
 
-            // Chart card: only refresh when this reload actually fetched glucose history
+            // Chart card: only refresh when this reload actually fetched glucose history.
+            // Only real CGM history is charted — no predicted values.
             if let glucoseSamples = glucoseSamples {
                 let unit = self.deviceManager.displayGlucosePreference.unit
-                let predictionEnd = Date(timeIntervalSinceNow: Self.chartPredictionInterval)
-                let predicted: [GlucoseValue]
-                if automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled {
-                    predicted = (predictedGlucoseValues ?? []).filter { $0.startDate <= predictionEnd }
-                } else {
-                    predicted = []
-                }
                 self.chartHistoricalGlucose = glucoseSamples.map { ($0.startDate, $0.quantity.doubleValue(for: unit)) }
-                self.chartPredictedGlucose = predicted.map { ($0.startDate, $0.quantity.doubleValue(for: unit)) }
                 if let targetSchedule = self.deviceManager.loopManager.settings.glucoseTargetRangeSchedule {
                     let range = targetSchedule.quantityRange(at: Date())
                     self.chartTargetRange = range.lowerBound.doubleValue(for: unit)...range.upperBound.doubleValue(for: unit)
@@ -752,13 +745,10 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
     private static let lastManualBolusLookback = TimeInterval(hours: 24)
 
-    /// How much glucose history the chart card shows, and how far ahead its
-    /// dashed prediction extends.
+    /// How much glucose history the chart card shows
     private static let chartHistoryInterval = TimeInterval(hours: 3)
-    private static let chartPredictionInterval = TimeInterval(hours: 1)
 
     private var chartHistoricalGlucose: [(date: Date, value: Double)] = []
-    private var chartPredictedGlucose: [(date: Date, value: Double)] = []
     private var chartTargetRange: ClosedRange<Double>?
 
     private lazy var bolusTimeFormatter: DateFormatter = {
@@ -858,7 +848,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
     private func configureChartCell(_ cell: GlucoseChartTableViewCell) {
         cell.titleLabel.text = NSLocalizedString("Glucose – Last 3 Hours", comment: "The title of the status screen glucose chart card")
         cell.unitLabel.text = deviceManager.displayGlucosePreference.unit.localizedShortUnitString
-        cell.chartView.setData(historical: chartHistoricalGlucose, predicted: chartPredictedGlucose, targetRange: chartTargetRange)
+        cell.chartView.setData(historical: chartHistoricalGlucose, predicted: [], targetRange: chartTargetRange)
     }
 
     private func updateChartCell() {
@@ -1334,6 +1324,52 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
     }
 
+    /// A vertical color gradient used behind the primary action buttons
+    private class PrimaryButtonGradientView: UIView {
+        override class var layerClass: AnyClass { CAGradientLayer.self }
+
+        private let baseColor: UIColor
+
+        init(color: UIColor) {
+            baseColor = color
+            super.init(frame: .zero)
+            isUserInteractionEnabled = false
+            updateColors()
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+            super.traitCollectionDidChange(previousTraitCollection)
+            updateColors()
+        }
+
+        private func updateColors() {
+            let resolved = baseColor.resolvedColor(with: traitCollection)
+            let gradient = layer as! CAGradientLayer
+            gradient.startPoint = CGPoint(x: 0.5, y: 0)
+            gradient.endPoint = CGPoint(x: 0.5, y: 1)
+            gradient.colors = [
+                Self.blend(resolved, with: .white, fraction: 0.3).cgColor,
+                resolved.cgColor,
+                Self.blend(resolved, with: .black, fraction: 0.12).cgColor,
+            ]
+        }
+
+        private static func blend(_ color: UIColor, with other: UIColor, fraction: CGFloat) -> UIColor {
+            var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+            var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+            color.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+            other.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+            return UIColor(red: r1 + (r2 - r1) * fraction,
+                           green: g1 + (g2 - g1) * fraction,
+                           blue: b1 + (b2 - b1) * fraction,
+                           alpha: a1)
+        }
+    }
+
     private class PrimaryActionsTableViewCell: UITableViewCell {
         var onBolus: (() -> Void)?
         var onCarbs: (() -> Void)?
@@ -1360,6 +1396,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
             config.cornerStyle = .large
             config.baseForegroundColor = .white
             config.baseBackgroundColor = color
+            // A subtle vertical gradient of the button color, under the glass sheen
+            config.background.customView = PrimaryButtonGradientView(color: color)
             config.contentInsets = NSDirectionalEdgeInsets(top: 20, leading: 8, bottom: 20, trailing: 8)
             let button = UIButton(configuration: config)
             button.tintColor = color
@@ -1457,9 +1495,10 @@ final class StatusTableViewController: LoopChartsTableViewController {
             // strongly than separate small tiles
             let effect: UIVisualEffect
             if #available(iOS 26.0, *) {
-                effect = UIGlassEffect()
+                // The clear variant is more translucent than regular glass
+                effect = UIGlassEffect(style: .clear)
             } else {
-                effect = UIBlurEffect(style: .systemMaterial)
+                effect = UIBlurEffect(style: .systemUltraThinMaterial)
             }
             glassContainer = UIVisualEffectView(effect: effect)
 
@@ -1511,7 +1550,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
         static let itemColor = UIColor(named: "secondaryAction") ?? .secondaryLabel
 
         func setPreMeal(selected: Bool, enabled: Bool) {
-            preMealButton.configuration?.image = UIImage.preMealImage(selected: selected)
+            // Keep the outline icon in both states; only the color signals the toggle.
+            // The filled "selected" asset reads as inverted on glass.
             preMealButton.configuration?.baseForegroundColor = selected ? .systemGreen : Self.itemColor
             preMealButton.isEnabled = enabled
             if selected {
