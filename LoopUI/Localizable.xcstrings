@@ -1951,6 +1951,9 @@
         }
       }
     },
+    "Glucose" : {
+      "comment" : "The title pill on the status screen glucose card"
+    },
     "HIGH" : {
       "comment" : "String displayed instead of a glucose value above the CGM range",
       "localizations" : {

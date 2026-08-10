@@ -345,6 +345,28 @@ public final class StatusHeroView: UIView {
         return label
     }()
 
+    private let titleLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.textColor = .secondaryLabel
+        label.text = LocalizedString("Glucose", comment: "The title pill on the status screen glucose card")
+        return label
+    }()
+
+    private let titlePill: UIView = {
+        let view = UIView()
+        view.backgroundColor = .tertiarySystemFill
+        return view
+    }()
+
+    /// A thin decorative ring around the glucose reading; purely visual, unrelated to loop state
+    private let decorativeRingLayer: CAShapeLayer = {
+        let layer = CAShapeLayer()
+        layer.fillColor = UIColor.clear.cgColor
+        layer.lineWidth = 3
+        return layer
+    }()
+
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
@@ -368,11 +390,17 @@ public final class StatusHeroView: UIView {
         infoStack.alignment = .center
         infoStack.spacing = 4
 
+        layer.addSublayer(decorativeRingLayer)
+
         loopCompletionHUD.translatesAutoresizingMaskIntoConstraints = false
         glucoseLabel.translatesAutoresizingMaskIntoConstraints = false
         infoStack.translatesAutoresizingMaskIntoConstraints = false
         eventualGlucoseLabel.translatesAutoresizingMaskIntoConstraints = false
+        titlePill.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        titlePill.addSubview(titleLabel)
+        addSubview(titlePill)
         addSubview(loopCompletionHUD)
         addSubview(glucoseLabel)
         addSubview(infoStack)
@@ -385,10 +413,17 @@ public final class StatusHeroView: UIView {
         bottomConstraint.priority = UILayoutPriority(999)
 
         NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: titlePill.leadingAnchor, constant: 12),
+            titleLabel.trailingAnchor.constraint(equalTo: titlePill.trailingAnchor, constant: -12),
+            titleLabel.topAnchor.constraint(equalTo: titlePill.topAnchor, constant: 5),
+            titleLabel.bottomAnchor.constraint(equalTo: titlePill.bottomAnchor, constant: -5),
+            titlePill.centerXAnchor.constraint(equalTo: centerXAnchor),
+            titlePill.topAnchor.constraint(equalTo: topAnchor, constant: 14),
+
             loopCompletionHUD.widthAnchor.constraint(equalToConstant: LayoutConstants.ringDiameter),
             loopCompletionHUD.heightAnchor.constraint(equalTo: loopCompletionHUD.widthAnchor),
             loopCompletionHUD.centerXAnchor.constraint(equalTo: centerXAnchor),
-            loopCompletionHUD.topAnchor.constraint(equalTo: topAnchor, constant: 16),
+            loopCompletionHUD.topAnchor.constraint(equalTo: titlePill.bottomAnchor, constant: 8),
 
             // The glucose value itself is centered in the ring; the trend/unit line
             // hangs below it so it doesn't drag the number off center
@@ -411,6 +446,24 @@ public final class StatusHeroView: UIView {
         }
 
         updateGlucoseDisplay()
+    }
+
+    public override func layoutSubviews() {
+        super.layoutSubviews()
+
+        titlePill.layer.cornerRadius = titlePill.bounds.height / 2
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        decorativeRingLayer.path = UIBezierPath(ovalIn: loopCompletionHUD.frame.insetBy(dx: 1.5, dy: 1.5)).cgPath
+        decorativeRingLayer.strokeColor = UIColor.glucoseTintColor.withAlphaComponent(0.35).resolvedColor(with: traitCollection).cgColor
+        CATransaction.commit()
+    }
+
+    public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+
+        setNeedsLayout()
     }
 
     private func updateBackgroundTint() {

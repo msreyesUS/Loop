@@ -19981,6 +19981,9 @@
         }
       }
     },
+    "Glucose – Last 3 Hours" : {
+      "comment" : "The title of the status screen glucose chart card"
+    },
     "Glucose Based Partial Application" : {
       "comment" : "Title for glucose based partial application experiment description\nTitle of glucose based partial application experiment",
       "localizations" : {
@@ -35873,6 +35876,9 @@
           }
         }
       }
+    },
+    "Target Range" : {
+      "comment" : "Caption on the glucose chart target range band"
     },
     "TestFlight" : {
       "comment" : "Settings app TestFlight section",

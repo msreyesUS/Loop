@@ -25,23 +25,17 @@ private extension RefreshContext {
     static let all: Set<RefreshContext> = [.status, .glucose, .insulin, .carbs, .targets]
 }
 
-/// A full-screen, slowly breathing gradient behind the status table. A single palette
-/// hue (per glucose range) fades from the top of the screen to nearly clear, giving the
-/// Liquid Glass controls colored content to refract.
+/// A full-screen, static soft gradient behind the status table — a slight cool wash
+/// rather than flat white — giving the Liquid Glass controls content to refract.
 private final class GradientBackgroundView: UIView {
 
-    /// The palette hue; nil renders a neutral background
-    var baseColor: UIColor? {
-        didSet {
-            updateColors()
-        }
-    }
+    private static let topColor = UIColor(named: "statusBackgroundTop") ?? .secondarySystemBackground
+    private static let bottomColor = UIColor(named: "statusBackgroundBottom") ?? .secondarySystemBackground
 
     private let gradientLayer: CAGradientLayer = {
         let layer = CAGradientLayer()
         layer.startPoint = CGPoint(x: 0.5, y: 0)
         layer.endPoint = CGPoint(x: 0.5, y: 1)
-        layer.locations = [0.0, 0.7]
         return layer
     }()
 
@@ -50,6 +44,7 @@ private final class GradientBackgroundView: UIView {
 
         backgroundColor = .secondarySystemBackground
         layer.addSublayer(gradientLayer)
+        updateColors()
     }
 
     required init?(coder: NSCoder) {
@@ -72,48 +67,11 @@ private final class GradientBackgroundView: UIView {
         updateColors()
     }
 
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-
-        // Animations are removed when the app backgrounds; reassert when reattached
-        if window != nil {
-            startBreathing()
-        }
-    }
-
     private func updateColors() {
-        if let baseColor = baseColor {
-            let resolved = baseColor.resolvedColor(with: traitCollection)
-            gradientLayer.colors = [
-                resolved.withAlphaComponent(0.28).cgColor,
-                resolved.withAlphaComponent(0.03).cgColor,
-            ]
-        } else {
-            gradientLayer.colors = nil
-        }
-        startBreathing()
-    }
-
-    private static let breatheAnimationKey = "com.loopkit.Loop.statusGradientBreathe"
-
-    private func startBreathing() {
-        guard !UIAccessibility.isReduceMotionEnabled else {
-            gradientLayer.removeAnimation(forKey: Self.breatheAnimationKey)
-            return
-        }
-        guard gradientLayer.animation(forKey: Self.breatheAnimationKey) == nil else {
-            return
-        }
-
-        // A slow, subtle drift of the gradient's falloff
-        let animation = CABasicAnimation(keyPath: "locations")
-        animation.fromValue = [0.0, 0.65]
-        animation.toValue = [0.35, 1.0]
-        animation.duration = 7
-        animation.autoreverses = true
-        animation.repeatCount = .infinity
-        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        gradientLayer.add(animation, forKey: Self.breatheAnimationKey)
+        gradientLayer.colors = [
+            Self.topColor.resolvedColor(with: traitCollection).cgColor,
+            Self.bottomColor.resolvedColor(with: traitCollection).cgColor,
+        ]
     }
 }
 
@@ -146,6 +104,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         tableView.register(HeroStatusTableViewCell.self, forCellReuseIdentifier: HeroStatusTableViewCell.className)
         tableView.register(PrimaryActionsTableViewCell.self, forCellReuseIdentifier: PrimaryActionsTableViewCell.className)
         tableView.register(SecondaryActionsTableViewCell.self, forCellReuseIdentifier: SecondaryActionsTableViewCell.className)
+        tableView.register(GlucoseChartTableViewCell.self, forCellReuseIdentifier: GlucoseChartTableViewCell.className)
         tableView.register(StatsTableViewCell.self, forCellReuseIdentifier: StatsTableViewCell.className)
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "LastBolusCell")
         tableView.register(BolusProgressTableViewCell.nib(), forCellReuseIdentifier: BolusProgressTableViewCell.className)
@@ -507,6 +466,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         reloading = true
 
         let reloadGroup = DispatchGroup()
+        var glucoseSamples: [StoredGlucoseSample]?
         var predictedGlucoseValues: [GlucoseValue]?
         var iobValues: [InsulinValue]?
         var cobValues: [CarbValue]?
@@ -571,6 +531,20 @@ final class StatusTableViewController: LoopChartsTableViewController {
             carbsOnBoard = state.carbsOnBoard?.quantity
 
             reloadGroup.leave()
+        }
+
+        if currentContext.contains(.glucose) {
+            reloadGroup.enter()
+            deviceManager.glucoseStore.getGlucoseSamples(start: Date(timeIntervalSinceNow: -Self.chartHistoryInterval), end: nil) { (result) -> Void in
+                switch result {
+                case .failure(let error):
+                    self.log.error("Failure getting glucose samples: %{public}@", String(describing: error))
+                    glucoseSamples = nil
+                case .success(let samples):
+                    glucoseSamples = samples
+                }
+                reloadGroup.leave()
+            }
         }
 
         if currentContext.contains(.insulin) {
@@ -706,6 +680,27 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 }
             }
 
+            // Chart card: only refresh when this reload actually fetched glucose history
+            if let glucoseSamples = glucoseSamples {
+                let unit = self.deviceManager.displayGlucosePreference.unit
+                let predictionEnd = Date(timeIntervalSinceNow: Self.chartPredictionInterval)
+                let predicted: [GlucoseValue]
+                if automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled {
+                    predicted = (predictedGlucoseValues ?? []).filter { $0.startDate <= predictionEnd }
+                } else {
+                    predicted = []
+                }
+                self.chartHistoricalGlucose = glucoseSamples.map { ($0.startDate, $0.quantity.doubleValue(for: unit)) }
+                self.chartPredictedGlucose = predicted.map { ($0.startDate, $0.quantity.doubleValue(for: unit)) }
+                if let targetSchedule = self.deviceManager.loopManager.settings.glucoseTargetRangeSchedule {
+                    let range = targetSchedule.quantityRange(at: Date())
+                    self.chartTargetRange = range.lowerBound.doubleValue(for: unit)...range.upperBound.doubleValue(for: unit)
+                } else {
+                    self.chartTargetRange = nil
+                }
+                self.updateChartCell()
+            }
+
             // Show/hide the table view rows
             let statusRowMode = self.determineStatusRowMode()
 
@@ -729,6 +724,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         case alertWarning
         case hud
         case hero
+        case chart
         case stats
         case status
         case actions
@@ -757,6 +753,15 @@ final class StatusTableViewController: LoopChartsTableViewController {
     private var lastManualBolus: DoseEntry?
 
     private static let lastManualBolusLookback = TimeInterval(hours: 24)
+
+    /// How much glucose history the chart card shows, and how far ahead its
+    /// dashed prediction extends.
+    private static let chartHistoryInterval = TimeInterval(hours: 3)
+    private static let chartPredictionInterval = TimeInterval(hours: 1)
+
+    private var chartHistoricalGlucose: [(date: Date, value: Double)] = []
+    private var chartPredictedGlucose: [(date: Date, value: Double)] = []
+    private var chartTargetRange: ClosedRange<Double>?
 
     private lazy var bolusTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -850,6 +855,18 @@ final class StatusTableViewController: LoopChartsTableViewController {
         cell.basalValueLabel.text = netBasalDescription ?? placeholder
     }
 
+    private func configureChartCell(_ cell: GlucoseChartTableViewCell) {
+        cell.titleLabel.text = NSLocalizedString("Glucose – Last 3 Hours", comment: "The title of the status screen glucose chart card")
+        cell.unitLabel.text = deviceManager.displayGlucosePreference.unit.localizedShortUnitString
+        cell.chartView.setData(historical: chartHistoricalGlucose, predicted: chartPredictedGlucose, targetRange: chartTargetRange)
+    }
+
+    private func updateChartCell() {
+        if let cell = tableView.cellForRow(at: IndexPath(row: 0, section: Section.chart.rawValue)) as? GlucoseChartTableViewCell {
+            configureChartCell(cell)
+        }
+    }
+
     private func updateStatsCell() {
         if let cell = tableView.cellForRow(at: IndexPath(row: StatsRow.metrics.rawValue, section: Section.stats.rawValue)) as? StatsTableViewCell {
             configureStatsCell(cell)
@@ -871,6 +888,12 @@ final class StatusTableViewController: LoopChartsTableViewController {
         cell.contentConfiguration = content
         cell.backgroundColor = .clear
         cell.selectionStyle = .none
+
+        var background = UIBackgroundConfiguration.clear()
+        background.backgroundColor = .systemBackground
+        background.cornerRadius = 14
+        background.backgroundInsets = NSDirectionalEdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
+        cell.backgroundConfiguration = background
     }
 
     private func updateLastBolusCell() {
@@ -1002,6 +1025,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
             return shouldShowBannerWarning ? 1 : 0
         case .hero:
             return 1
+        case .chart:
+            return 1
         case .stats:
             return StatsRow.allCases.count
         case .hud:
@@ -1013,6 +1038,16 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
     }
 
+    /// A rounded card container used by the redesigned status cells
+    private static func makeCardView(cornerRadius: CGFloat = 20) -> UIView {
+        let card = UIView()
+        card.backgroundColor = .systemBackground
+        card.layer.cornerRadius = cornerRadius
+        card.layer.cornerCurve = .continuous
+        card.translatesAutoresizingMaskIntoConstraints = false
+        return card
+    }
+
     private class HeroStatusTableViewCell: UITableViewCell {
         let heroView = StatusHeroView()
 
@@ -1022,14 +1057,225 @@ final class StatusTableViewController: LoopChartsTableViewController {
             selectionStyle = .none
             backgroundColor = .clear
 
+            let cardView = StatusTableViewController.makeCardView()
             heroView.translatesAutoresizingMaskIntoConstraints = false
-            contentView.addSubview(heroView)
-            let bottomConstraint = heroView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+            cardView.addSubview(heroView)
+            contentView.addSubview(cardView)
+
+            let bottomConstraint = cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4)
             bottomConstraint.priority = UILayoutPriority(999)
             NSLayoutConstraint.activate([
-                heroView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-                heroView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-                heroView.topAnchor.constraint(equalTo: contentView.topAnchor),
+                heroView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor),
+                heroView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor),
+                heroView.topAnchor.constraint(equalTo: cardView.topAnchor),
+                heroView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor),
+
+                cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+                cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+                cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
+                bottomConstraint,
+            ])
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+    }
+
+    /// A lightweight glucose chart: target-range band, history line with endpoint dot,
+    /// dashed prediction tail, and hourly time labels. No interaction; tap the card to
+    /// open the prediction screen.
+    private final class SimpleGlucoseChartView: UIView {
+        private var historical: [(date: Date, value: Double)] = []
+        private var predicted: [(date: Date, value: Double)] = []
+        private var targetRange: ClosedRange<Double>?
+
+        private lazy var axisTimeFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .none
+            formatter.timeStyle = .short
+            return formatter
+        }()
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isOpaque = false
+            backgroundColor = .clear
+            contentMode = .redraw
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        func setData(historical: [(date: Date, value: Double)], predicted: [(date: Date, value: Double)], targetRange: ClosedRange<Double>?) {
+            self.historical = historical.sorted { $0.date < $1.date }
+            self.predicted = predicted.sorted { $0.date < $1.date }
+            self.targetRange = targetRange
+            setNeedsDisplay()
+        }
+
+        override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+            super.traitCollectionDidChange(previousTraitCollection)
+            setNeedsDisplay()
+        }
+
+        override func draw(_ rect: CGRect) {
+            let axisHeight: CGFloat = 14
+            let drawRect = CGRect(x: bounds.minX + 2, y: bounds.minY + 4, width: bounds.width - 4, height: bounds.height - axisHeight - 8)
+
+            let all = historical + predicted
+            let minDate = all.map(\.date).min() ?? Date(timeIntervalSinceNow: -TimeInterval(hours: 3))
+            let maxDate = all.map(\.date).max() ?? Date()
+            guard maxDate > minDate else { return }
+            let dateSpan = maxDate.timeIntervalSince(minDate)
+
+            var valueMin = all.map(\.value).min() ?? targetRange?.lowerBound ?? 0
+            var valueMax = all.map(\.value).max() ?? targetRange?.upperBound ?? 1
+            if let targetRange = targetRange {
+                valueMin = min(valueMin, targetRange.lowerBound)
+                valueMax = max(valueMax, targetRange.upperBound)
+            }
+            let padding = max((valueMax - valueMin) * 0.15, 0.5)
+            valueMin -= padding
+            valueMax += padding
+            let valueSpan = valueMax - valueMin
+
+            func x(for date: Date) -> CGFloat {
+                drawRect.minX + CGFloat(date.timeIntervalSince(minDate) / dateSpan) * drawRect.width
+            }
+            func y(for value: Double) -> CGFloat {
+                drawRect.maxY - CGFloat((value - valueMin) / valueSpan) * drawRect.height
+            }
+            func point(for sample: (date: Date, value: Double)) -> CGPoint {
+                CGPoint(x: x(for: sample.date), y: y(for: sample.value))
+            }
+
+            // Target range band
+            if let targetRange = targetRange {
+                let bandRect = CGRect(x: drawRect.minX,
+                                      y: y(for: targetRange.upperBound),
+                                      width: drawRect.width,
+                                      height: y(for: targetRange.lowerBound) - y(for: targetRange.upperBound))
+                let bandPath = UIBezierPath(roundedRect: bandRect, cornerRadius: 3)
+                UIColor.systemGreen.withAlphaComponent(0.12).resolvedColor(with: traitCollection).setFill()
+                bandPath.fill()
+
+                let caption = NSLocalizedString("Target Range", comment: "Caption on the glucose chart target range band") as NSString
+                let captionAttributes: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: 8, weight: .medium),
+                    .foregroundColor: UIColor.systemGreen.resolvedColor(with: traitCollection),
+                ]
+                let captionSize = caption.size(withAttributes: captionAttributes)
+                caption.draw(at: CGPoint(x: bandRect.maxX - captionSize.width - 4, y: bandRect.maxY - captionSize.height - 2), withAttributes: captionAttributes)
+            }
+
+            func path(for samples: [(date: Date, value: Double)]) -> UIBezierPath {
+                let path = UIBezierPath()
+                path.lineCapStyle = .round
+                path.lineJoinStyle = .round
+                for (index, sample) in samples.enumerated() {
+                    if index == 0 {
+                        path.move(to: point(for: sample))
+                    } else {
+                        path.addLine(to: point(for: sample))
+                    }
+                }
+                return path
+            }
+
+            // History line and endpoint dot
+            let lineColor = UIColor.systemBlue.resolvedColor(with: traitCollection)
+            if historical.count > 1 {
+                let historyPath = path(for: historical)
+                historyPath.lineWidth = 2
+                lineColor.setStroke()
+                historyPath.stroke()
+            }
+            if let last = historical.last {
+                let dotRect = CGRect(x: point(for: last).x - 3, y: point(for: last).y - 3, width: 6, height: 6)
+                lineColor.setFill()
+                UIBezierPath(ovalIn: dotRect).fill()
+            }
+
+            // Dashed prediction tail, connected to the last real reading
+            var predictionSamples = predicted
+            if let lastHistorical = historical.last {
+                predictionSamples.insert(lastHistorical, at: 0)
+            }
+            if predictionSamples.count > 1 {
+                let predictionPath = path(for: predictionSamples)
+                predictionPath.lineWidth = 1.5
+                predictionPath.setLineDash([3, 3], count: 2, phase: 0)
+                lineColor.withAlphaComponent(0.6).setStroke()
+                predictionPath.stroke()
+            }
+
+            // Hourly time labels along the bottom
+            let labelAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 9),
+                .foregroundColor: UIColor.tertiaryLabel.resolvedColor(with: traitCollection),
+            ]
+            var tick = Calendar.current.nextDate(after: minDate, matching: DateComponents(minute: 0), matchingPolicy: .strict, direction: .forward) ?? minDate
+            while tick <= maxDate {
+                let text = axisTimeFormatter.string(from: tick) as NSString
+                let size = text.size(withAttributes: labelAttributes)
+                let centeredX = min(max(x(for: tick) - size.width / 2, bounds.minX), bounds.maxX - size.width)
+                text.draw(at: CGPoint(x: centeredX, y: bounds.maxY - size.height - 1), withAttributes: labelAttributes)
+                tick = tick.addingTimeInterval(.hours(1))
+            }
+        }
+    }
+
+    private class GlucoseChartTableViewCell: UITableViewCell {
+        let titleLabel: UILabel = {
+            let label = UILabel()
+            label.font = .systemFont(ofSize: 13, weight: .semibold)
+            label.textColor = .label
+            return label
+        }()
+
+        let unitLabel: UILabel = {
+            let label = UILabel()
+            label.font = .systemFont(ofSize: 11)
+            label.textColor = .secondaryLabel
+            return label
+        }()
+
+        let chartView = SimpleGlucoseChartView()
+
+        override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+            super.init(style: style, reuseIdentifier: reuseIdentifier)
+
+            selectionStyle = .none
+            backgroundColor = .clear
+
+            let cardView = StatusTableViewController.makeCardView(cornerRadius: 16)
+            titleLabel.translatesAutoresizingMaskIntoConstraints = false
+            unitLabel.translatesAutoresizingMaskIntoConstraints = false
+            chartView.translatesAutoresizingMaskIntoConstraints = false
+            cardView.addSubview(titleLabel)
+            cardView.addSubview(unitLabel)
+            cardView.addSubview(chartView)
+            contentView.addSubview(cardView)
+
+            let bottomConstraint = cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4)
+            bottomConstraint.priority = UILayoutPriority(999)
+            NSLayoutConstraint.activate([
+                titleLabel.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
+                titleLabel.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 12),
+                unitLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
+                unitLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+
+                chartView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
+                chartView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
+                chartView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6),
+                chartView.heightAnchor.constraint(equalToConstant: 110),
+                chartView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -10),
+
+                cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+                cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+                cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
                 bottomConstraint,
             ])
         }
@@ -1050,73 +1296,54 @@ final class StatusTableViewController: LoopChartsTableViewController {
             selectionStyle = .none
             backgroundColor = .clear
 
-            let columns = [
+            // Three separate small cards, one per metric
+            let cards = [
                 (NSLocalizedString("Active Insulin", comment: "The title of the active insulin stats column"), iobValueLabel),
                 (NSLocalizedString("Active Carbs", comment: "The title of the active carbs stats column"), cobValueLabel),
                 (NSLocalizedString("Basal", comment: "The title of the basal stats column"), basalValueLabel),
-            ].map { (title, valueLabel) -> UIStackView in
+            ].map { (title, valueLabel) -> UIView in
                 let titleLabel = UILabel()
-                titleLabel.font = .systemFont(ofSize: 13)
+                titleLabel.font = .systemFont(ofSize: 12)
                 titleLabel.textColor = .secondaryLabel
                 titleLabel.text = title
                 titleLabel.adjustsFontSizeToFitWidth = true
 
-                valueLabel.font = .monospacedDigitSystemFont(ofSize: 20, weight: .semibold)
+                valueLabel.font = .monospacedDigitSystemFont(ofSize: 18, weight: .semibold)
                 valueLabel.textColor = .label
 
                 let column = UIStackView(arrangedSubviews: [titleLabel, valueLabel])
                 column.axis = .vertical
                 column.alignment = .center
                 column.spacing = 4
-                return column
+                column.translatesAutoresizingMaskIntoConstraints = false
+
+                let card = StatusTableViewController.makeCardView(cornerRadius: 14)
+                card.addSubview(column)
+                NSLayoutConstraint.activate([
+                    column.centerXAnchor.constraint(equalTo: card.centerXAnchor),
+                    column.leadingAnchor.constraint(greaterThanOrEqualTo: card.leadingAnchor, constant: 6),
+                    column.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
+                    column.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -12),
+                ])
+                return card
             }
 
-            func makeSeparator() -> UIView {
-                let separator = UIView()
-                separator.backgroundColor = .separator
-                return separator
-            }
-
-            let verticalSeparators = [makeSeparator(), makeSeparator()]
-            let stack = UIStackView(arrangedSubviews: [columns[0], verticalSeparators[0], columns[1], verticalSeparators[1], columns[2]])
+            let stack = UIStackView(arrangedSubviews: cards)
             stack.axis = .horizontal
-            stack.alignment = .fill
+            stack.distribution = .fillEqually
+            stack.spacing = 10
             stack.translatesAutoresizingMaskIntoConstraints = false
 
-            let topSeparator = makeSeparator()
-            let bottomSeparator = makeSeparator()
-            topSeparator.translatesAutoresizingMaskIntoConstraints = false
-            bottomSeparator.translatesAutoresizingMaskIntoConstraints = false
-
             contentView.addSubview(stack)
-            contentView.addSubview(topSeparator)
-            contentView.addSubview(bottomSeparator)
 
-            let hairline = 1 / UIScreen.main.scale
-
-            let bottomConstraint = stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12)
+            let bottomConstraint = stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4)
             bottomConstraint.priority = UILayoutPriority(999)
 
             NSLayoutConstraint.activate([
-                columns[0].widthAnchor.constraint(equalTo: columns[1].widthAnchor),
-                columns[1].widthAnchor.constraint(equalTo: columns[2].widthAnchor),
-                verticalSeparators[0].widthAnchor.constraint(equalToConstant: hairline),
-                verticalSeparators[1].widthAnchor.constraint(equalToConstant: hairline),
-
-                stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-                stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-                stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+                stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+                stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+                stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
                 bottomConstraint,
-
-                topSeparator.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-                topSeparator.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-                topSeparator.topAnchor.constraint(equalTo: contentView.topAnchor),
-                topSeparator.heightAnchor.constraint(equalToConstant: hairline),
-
-                bottomSeparator.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-                bottomSeparator.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-                bottomSeparator.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-                bottomSeparator.heightAnchor.constraint(equalToConstant: hairline),
             ])
         }
 
@@ -1137,12 +1364,10 @@ final class StatusTableViewController: LoopChartsTableViewController {
         private static func makeButton(title: String, image: UIImage?, color: UIColor) -> UIButton {
             var config: UIButton.Configuration
             if #available(iOS 26.0, *) {
-                // Clear glass with the color carried by the icon and label,
-                // like system tab bar items
-                config = .glass()
+                // Colored Liquid Glass with white content, like the reference design
+                config = .prominentGlass()
             } else {
-                config = .tinted()
-                config.baseBackgroundColor = color
+                config = .filled()
             }
             var attributedTitle = AttributedString(title)
             attributedTitle.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
@@ -1151,7 +1376,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
             config.imagePlacement = .top
             config.imagePadding = 10
             config.cornerStyle = .large
-            config.baseForegroundColor = color
+            config.baseForegroundColor = .white
+            config.baseBackgroundColor = color
             config.contentInsets = NSDirectionalEdgeInsets(top: 20, leading: 8, bottom: 20, trailing: 8)
             let button = UIButton(configuration: config)
             button.tintColor = color
@@ -1160,15 +1386,16 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
 
         override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+            // Cool palette matching the reference design: teal / green / blue
             bolusButton = Self.makeButton(title: NSLocalizedString("Bolus", comment: "The label of the bolus action button"),
                                           image: UIImage(named: "bolus"),
-                                          color: .insulinTintColor)
+                                          color: .systemTeal)
             carbsButton = Self.makeButton(title: NSLocalizedString("Carbs", comment: "The label of the carb entry action button"),
                                           image: UIImage(named: "carbs"),
-                                          color: .carbTintColor)
+                                          color: .systemGreen)
             presetButton = Self.makeButton(title: NSLocalizedString("Preset", comment: "The label of the preset action button"),
                                            image: UIImage.workoutImage(selected: false),
-                                           color: .glucoseTintColor)
+                                           color: .systemBlue)
 
             super.init(style: style, reuseIdentifier: reuseIdentifier)
 
@@ -1214,10 +1441,13 @@ final class StatusTableViewController: LoopChartsTableViewController {
         let suspendButton: UIButton
         let settingsButton: UIButton
 
-        private let glassContainer: UIVisualEffectView
-
         private static func makeButton(title: String, image: UIImage?, color: UIColor) -> UIButton {
-            var config = UIButton.Configuration.plain()
+            var config: UIButton.Configuration
+            if #available(iOS 26.0, *) {
+                config = .glass()
+            } else {
+                config = .gray()
+            }
             var attributedTitle = AttributedString(title)
             attributedTitle.font = UIFont.systemFont(ofSize: 12, weight: .medium)
             config.attributedTitle = attributedTitle
@@ -1225,8 +1455,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
             config.imagePlacement = .top
             config.imagePadding = 4
             config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 20, weight: .regular)
+            config.cornerStyle = .large
             config.baseForegroundColor = color
-            config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 4, bottom: 8, trailing: 4)
+            config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 4, bottom: 10, trailing: 4)
             return UIButton(configuration: config)
         }
 
@@ -1241,16 +1472,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
                                              image: UIImage(systemName: "gearshape"),
                                              color: .label)
 
-            // A single floating glass capsule containing the three tab-style items,
-            // like the system tab bar
-            let effect: UIVisualEffect
-            if #available(iOS 26.0, *) {
-                effect = UIGlassEffect()
-            } else {
-                effect = UIBlurEffect(style: .systemMaterial)
-            }
-            glassContainer = UIVisualEffectView(effect: effect)
-
             super.init(style: style, reuseIdentifier: reuseIdentifier)
 
             selectionStyle = .none
@@ -1263,33 +1484,18 @@ final class StatusTableViewController: LoopChartsTableViewController {
             let stack = UIStackView(arrangedSubviews: [preMealButton, suspendButton, settingsButton])
             stack.axis = .horizontal
             stack.distribution = .fillEqually
+            stack.spacing = 10
             stack.translatesAutoresizingMaskIntoConstraints = false
 
-            glassContainer.clipsToBounds = true
-            glassContainer.contentView.addSubview(stack)
-            glassContainer.translatesAutoresizingMaskIntoConstraints = false
-
-            contentView.addSubview(glassContainer)
-            let bottomConstraint = glassContainer.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10)
+            contentView.addSubview(stack)
+            let bottomConstraint = stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10)
             bottomConstraint.priority = UILayoutPriority(999)
             NSLayoutConstraint.activate([
-                stack.leadingAnchor.constraint(equalTo: glassContainer.contentView.leadingAnchor),
-                stack.trailingAnchor.constraint(equalTo: glassContainer.contentView.trailingAnchor),
-                stack.topAnchor.constraint(equalTo: glassContainer.contentView.topAnchor),
-                stack.bottomAnchor.constraint(equalTo: glassContainer.contentView.bottomAnchor),
-
-                glassContainer.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
-                glassContainer.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
-                glassContainer.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
-                glassContainer.heightAnchor.constraint(equalToConstant: 62),
+                stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+                stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+                stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
                 bottomConstraint,
             ])
-        }
-
-        override func layoutSubviews() {
-            super.layoutSubviews()
-
-            glassContainer.layer.cornerRadius = glassContainer.bounds.height / 2
         }
 
         required init?(coder: NSCoder) {
@@ -1410,6 +1616,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
         case .hero:
             let cell = tableView.dequeueReusableCell(withIdentifier: HeroStatusTableViewCell.className, for: indexPath) as! HeroStatusTableViewCell
             heroStatusView = cell.heroView
+
+            return cell
+        case .chart:
+            let cell = tableView.dequeueReusableCell(withIdentifier: GlucoseChartTableViewCell.className, for: indexPath) as! GlucoseChartTableViewCell
+            configureChartCell(cell)
 
             return cell
         case .stats:
@@ -1615,6 +1826,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
             } else {
                 tableView.deselectRow(at: indexPath, animated: true)
                 presentUnmuteAlertConfirmation()
+            }
+        case .chart:
+            tableView.deselectRow(at: indexPath, animated: true)
+            if automaticDosingStatus.automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled {
+                performSegue(withIdentifier: PredictionTableViewController.className, sender: indexPath)
             }
         case .hero, .stats, .hud, .actions:
             break
@@ -2045,10 +2261,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
         didSet {
             guard let heroStatusView = heroStatusView, heroStatusView != oldValue else {
                 return
-            }
-
-            heroStatusView.backgroundTintDidChange = { [weak self] baseColor in
-                self?.gradientBackgroundView.baseColor = baseColor
             }
 
             heroStatusView.loopCompletionHUD.stateColors = .loopStatus
