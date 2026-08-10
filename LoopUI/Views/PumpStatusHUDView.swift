@@ -31,13 +31,15 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
     /// A small label shown alongside the pump manager's HUD (e.g. pod expiration)
     public let expirationLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.font = .systemFont(ofSize: 15, weight: .medium)
         label.textColor = .secondaryLabel
         label.numberOfLines = 2
         label.textAlignment = .center
         label.adjustsFontSizeToFitWidth = true
         label.minimumScaleFactor = 0.8
         label.isHidden = true
+        // Stretch to fill the space next to the pump HUD so the text centers within it
+        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
         return label
     }()
 
