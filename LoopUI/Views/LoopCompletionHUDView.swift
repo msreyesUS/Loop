@@ -367,7 +367,7 @@ public final class StatusHeroView: UIView {
         guard let category = glucoseRangeCategory else {
             return UIColor.tertiaryLabel.withAlphaComponent(0.3)
         }
-        return category.backgroundGradientColor.withAlphaComponent(0.6)
+        return category.backgroundGradientColor.withAlphaComponent(0.95)
     }
 
 
