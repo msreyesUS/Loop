@@ -364,6 +364,12 @@ public final class StatusHeroView: UIView {
         addSubview(glucoseStack)
         addSubview(eventualGlucoseLabel)
 
+        // The bottom constraint yields (999) rather than conflicting with the temporary
+        // UIView-Encapsulated-Layout-Height constraint during table view self-sizing;
+        // everything else in the vertical chain stays required so the ring keeps its size.
+        let bottomConstraint = eventualGlucoseLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16)
+        bottomConstraint.priority = UILayoutPriority(999)
+
         NSLayoutConstraint.activate([
             loopCompletionHUD.widthAnchor.constraint(equalToConstant: LayoutConstants.ringDiameter),
             loopCompletionHUD.heightAnchor.constraint(equalTo: loopCompletionHUD.widthAnchor),
@@ -377,7 +383,7 @@ public final class StatusHeroView: UIView {
             eventualGlucoseLabel.topAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 12),
             eventualGlucoseLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
             eventualGlucoseLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 8),
-            eventualGlucoseLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16),
+            bottomConstraint,
         ])
 
         loopCompletionHUD.freshnessDidChange = { [weak self] in
@@ -416,8 +422,15 @@ public final class StatusHeroView: UIView {
     }
 
     private func updateGlucoseDisplay() {
-        glucoseLabel.text = viewModel.glucoseValueString
-        glucoseLabel.textColor = viewModel.glucoseValueTintColor
+        if viewModel.glucoseValueString == CGMStatusHUDViewModel.staleGlucoseRepresentation {
+            // No current reading: show a dimmed full-size placeholder so the layout keeps
+            // its size perspective instead of collapsing around a row of dashes.
+            glucoseLabel.text = "0.0"
+            glucoseLabel.textColor = .tertiaryLabel
+        } else {
+            glucoseLabel.text = viewModel.glucoseValueString
+            glucoseLabel.textColor = viewModel.glucoseValueTintColor
+        }
         trendImageView.image = viewModel.glucoseTrendIcon
         trendImageView.isHidden = viewModel.glucoseTrendIcon == nil
         trendImageView.tintColor = viewModel.glucoseTrendTintColor

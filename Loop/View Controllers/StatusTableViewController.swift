@@ -134,6 +134,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             }
             .store(in: &cancellables)
 
+        tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 74
 
         // Estimate an initial value
@@ -931,11 +932,13 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
             heroView.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview(heroView)
+            let bottomConstraint = heroView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+            bottomConstraint.priority = UILayoutPriority(999)
             NSLayoutConstraint.activate([
                 heroView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
                 heroView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
                 heroView.topAnchor.constraint(equalTo: contentView.topAnchor),
-                heroView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+                bottomConstraint,
             ])
         }
 
@@ -999,6 +1002,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
             let hairline = 1 / UIScreen.main.scale
 
+            let bottomConstraint = stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12)
+            bottomConstraint.priority = UILayoutPriority(999)
+
             NSLayoutConstraint.activate([
                 columns[0].widthAnchor.constraint(equalTo: columns[1].widthAnchor),
                 columns[1].widthAnchor.constraint(equalTo: columns[2].widthAnchor),
@@ -1008,7 +1014,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
                 stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
                 stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
-                stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
+                bottomConstraint,
 
                 topSeparator.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
                 topSeparator.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
@@ -1076,11 +1082,13 @@ final class StatusTableViewController: LoopChartsTableViewController {
             stack.translatesAutoresizingMaskIntoConstraints = false
 
             contentView.addSubview(stack)
+            let bottomConstraint = stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4)
+            bottomConstraint.priority = UILayoutPriority(999)
             NSLayoutConstraint.activate([
                 stack.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
                 stack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
                 stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
-                stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4),
+                bottomConstraint,
             ])
         }
 
@@ -1141,11 +1149,13 @@ final class StatusTableViewController: LoopChartsTableViewController {
             stack.translatesAutoresizingMaskIntoConstraints = false
 
             contentView.addSubview(stack)
+            let bottomConstraint = stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
+            bottomConstraint.priority = UILayoutPriority(999)
             NSLayoutConstraint.activate([
                 stack.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
                 stack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
                 stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
-                stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
+                bottomConstraint,
             ])
         }
 
