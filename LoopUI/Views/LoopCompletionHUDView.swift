@@ -267,8 +267,8 @@ public final class StatusHeroView: UIView {
 
     private enum LayoutConstants {
         static let ringDiameter: CGFloat = 200
-        static let glucoseFontSize: CGFloat = 62
-        static let trendIconPointSize: CGFloat = 28
+        static let glucoseFontSize: CGFloat = 78
+        static let trendIconPointSize: CGFloat = 20
         static let sparklineHeight: CGFloat = 44
     }
 
@@ -364,15 +364,16 @@ public final class StatusHeroView: UIView {
     private func setup() {
         layer.insertSublayer(gradientLayer, at: 0)
 
-        let valueStack = UIStackView(arrangedSubviews: [glucoseLabel, trendImageView])
-        valueStack.axis = .horizontal
-        valueStack.alignment = .center
-        valueStack.spacing = 4
+        // Trend arrow and unit/delta sit together on a line below the glucose value
+        let infoStack = UIStackView(arrangedSubviews: [trendImageView, infoLabel])
+        infoStack.axis = .horizontal
+        infoStack.alignment = .center
+        infoStack.spacing = 4
 
-        let glucoseStack = UIStackView(arrangedSubviews: [valueStack, infoLabel])
+        let glucoseStack = UIStackView(arrangedSubviews: [glucoseLabel, infoStack])
         glucoseStack.axis = .vertical
         glucoseStack.alignment = .center
-        glucoseStack.spacing = 0
+        glucoseStack.spacing = 2
 
         loopCompletionHUD.translatesAutoresizingMaskIntoConstraints = false
         glucoseStack.translatesAutoresizingMaskIntoConstraints = false
@@ -549,12 +550,17 @@ final class GlucoseSparklineView: UIView {
 
         let drawRect = bounds.insetBy(dx: 2, dy: 4)
         let dateSpan = maxDate.timeIntervalSince(minDate)
-        // Guard against a flat line dividing by zero
-        let valueSpan = max(maxValue - minValue, 1e-6)
+        let valueSpan = maxValue - minValue
 
         func point(for sample: (date: Date, value: Double)) -> CGPoint {
             let x = drawRect.minX + CGFloat(sample.date.timeIntervalSince(minDate) / dateSpan) * drawRect.width
-            let y = drawRect.maxY - CGFloat((sample.value - minValue) / valueSpan) * drawRect.height
+            let y: CGFloat
+            if valueSpan > 1e-6 {
+                y = drawRect.maxY - CGFloat((sample.value - minValue) / valueSpan) * drawRect.height
+            } else {
+                // A perfectly flat series draws centered rather than hugging the bottom edge
+                y = drawRect.midY
+            }
             return CGPoint(x: x, y: y)
         }
 
