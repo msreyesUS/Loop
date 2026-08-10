@@ -1423,13 +1423,10 @@ final class StatusTableViewController: LoopChartsTableViewController {
         let suspendButton: UIButton
         let settingsButton: UIButton
 
+        private let glassContainer: UIVisualEffectView
+
         private static func makeButton(title: String, image: UIImage?, color: UIColor) -> UIButton {
-            var config: UIButton.Configuration
-            if #available(iOS 26.0, *) {
-                config = .glass()
-            } else {
-                config = .gray()
-            }
+            var config = UIButton.Configuration.plain()
             var attributedTitle = AttributedString(title)
             attributedTitle.font = UIFont.systemFont(ofSize: 12, weight: .medium)
             config.attributedTitle = attributedTitle
@@ -1437,7 +1434,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
             config.imagePlacement = .top
             config.imagePadding = 4
             config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 20, weight: .regular)
-            config.cornerStyle = .large
             config.baseForegroundColor = color
             config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 4, bottom: 10, trailing: 4)
             return UIButton(configuration: config)
@@ -1456,6 +1452,17 @@ final class StatusTableViewController: LoopChartsTableViewController {
                                              image: UIImage(systemName: "gearshape"),
                                              color: itemColor)
 
+            // One continuous floating glass capsule containing all three items, like the
+            // system tab bar: a single large glass surface reads as Liquid Glass far more
+            // strongly than separate small tiles
+            let effect: UIVisualEffect
+            if #available(iOS 26.0, *) {
+                effect = UIGlassEffect()
+            } else {
+                effect = UIBlurEffect(style: .systemMaterial)
+            }
+            glassContainer = UIVisualEffectView(effect: effect)
+
             super.init(style: style, reuseIdentifier: reuseIdentifier)
 
             selectionStyle = .none
@@ -1468,18 +1475,33 @@ final class StatusTableViewController: LoopChartsTableViewController {
             let stack = UIStackView(arrangedSubviews: [preMealButton, suspendButton, settingsButton])
             stack.axis = .horizontal
             stack.distribution = .fillEqually
-            stack.spacing = 10
             stack.translatesAutoresizingMaskIntoConstraints = false
 
-            contentView.addSubview(stack)
-            let bottomConstraint = stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10)
+            glassContainer.clipsToBounds = true
+            glassContainer.contentView.addSubview(stack)
+            glassContainer.translatesAutoresizingMaskIntoConstraints = false
+
+            contentView.addSubview(glassContainer)
+            let bottomConstraint = glassContainer.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10)
             bottomConstraint.priority = UILayoutPriority(999)
             NSLayoutConstraint.activate([
-                stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-                stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-                stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
+                stack.leadingAnchor.constraint(equalTo: glassContainer.contentView.leadingAnchor),
+                stack.trailingAnchor.constraint(equalTo: glassContainer.contentView.trailingAnchor),
+                stack.topAnchor.constraint(equalTo: glassContainer.contentView.topAnchor),
+                stack.bottomAnchor.constraint(equalTo: glassContainer.contentView.bottomAnchor),
+
+                glassContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
+                glassContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
+                glassContainer.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
+                glassContainer.heightAnchor.constraint(equalToConstant: 64),
                 bottomConstraint,
             ])
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+
+            glassContainer.layer.cornerRadius = glassContainer.bounds.height / 2
         }
 
         required init?(coder: NSCoder) {

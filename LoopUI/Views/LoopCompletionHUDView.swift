@@ -293,6 +293,7 @@ public final class StatusHeroView: UIView {
     public var glucoseRangeCategory: GlucoseRangeCategory? {
         didSet {
             updateBackgroundTint()
+            setNeedsLayout()
         }
     }
 
@@ -348,18 +349,26 @@ public final class StatusHeroView: UIView {
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 14, weight: .semibold)
-        label.textColor = .glucoseTintColor
+        label.textColor = .secondaryLabel
         label.text = LocalizedString("Glucose", comment: "The title above the glucose value on the status screen glucose card")
         return label
     }()
 
-    /// A thin decorative ring around the glucose reading; purely visual, unrelated to loop state
-    private let decorativeRingLayer: CAShapeLayer = {
+    /// A thin ring around the glucose reading, colored by range: green in range,
+    /// red low, yellow high, neutral when there is no current reading
+    private let rangeRingLayer: CAShapeLayer = {
         let layer = CAShapeLayer()
         layer.fillColor = UIColor.clear.cgColor
-        layer.lineWidth = 3
+        layer.lineWidth = 4
         return layer
     }()
+
+    private var rangeRingColor: UIColor {
+        guard let category = glucoseRangeCategory else {
+            return UIColor.tertiaryLabel.withAlphaComponent(0.3)
+        }
+        return category.backgroundGradientColor.withAlphaComponent(0.6)
+    }
 
 
     public override init(frame: CGRect) {
@@ -384,7 +393,7 @@ public final class StatusHeroView: UIView {
         infoStack.alignment = .center
         infoStack.spacing = 4
 
-        layer.addSublayer(decorativeRingLayer)
+        layer.addSublayer(rangeRingLayer)
 
         loopCompletionHUD.translatesAutoresizingMaskIntoConstraints = false
         glucoseLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -444,8 +453,8 @@ public final class StatusHeroView: UIView {
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        decorativeRingLayer.path = UIBezierPath(ovalIn: loopCompletionHUD.frame.insetBy(dx: 1.5, dy: 1.5)).cgPath
-        decorativeRingLayer.strokeColor = UIColor.glucoseTintColor.withAlphaComponent(0.35).resolvedColor(with: traitCollection).cgColor
+        rangeRingLayer.path = UIBezierPath(ovalIn: loopCompletionHUD.frame.insetBy(dx: 2, dy: 2)).cgPath
+        rangeRingLayer.strokeColor = rangeRingColor.resolvedColor(with: traitCollection).cgColor
         CATransaction.commit()
     }
 
