@@ -934,6 +934,7 @@
     },
     "%@ U Total" : {
       "comment" : "The subtitle format describing total insulin. (1: localized insulin total)",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -4387,6 +4388,7 @@
     },
     "Active Carbohydrates" : {
       "comment" : "The title of the Carbs On-Board graph",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -4768,7 +4770,7 @@
       }
     },
     "Active Insulin" : {
-      "comment" : "Details for missing data error when active insulin amount is missing\nThe title of the Insulin On-Board graph\nTitle describing quantity of still-absorbing insulin",
+      "comment" : "Details for missing data error when active insulin amount is missing\nTitle describing quantity of still-absorbing insulin",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -19833,7 +19835,7 @@
       }
     },
     "Glucose" : {
-      "comment" : "The title of the glucose and prediction graph\nTitle for predicted glucose chart on bolus screen",
+      "comment" : "Title for predicted glucose chart on bolus screen",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -21676,6 +21678,7 @@
     },
     "Insulin Delivery" : {
       "comment" : "The title of the insulin delivery graph",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {

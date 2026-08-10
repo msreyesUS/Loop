@@ -31,6 +31,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
     lazy var carbFormatter: QuantityFormatter = QuantityFormatter(for: .gram())
 
+    lazy var insulinFormatter: QuantityFormatter = QuantityFormatter(for: .internationalUnit())
+
     var onboardingManager: OnboardingManager!
 
     var testingScenariosManager: TestingScenariosManager!
@@ -54,12 +56,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
         tableView.register(BolusProgressTableViewCell.nib(), forCellReuseIdentifier: BolusProgressTableViewCell.className)
         tableView.register(AlertPermissionsDisabledWarningCell.self, forCellReuseIdentifier: AlertPermissionsDisabledWarningCell.className)
         tableView.register(MuteAlertsWarningCell.self, forCellReuseIdentifier: MuteAlertsWarningCell.className)
-
-        if FeatureFlags.predictedGlucoseChartClampEnabled {
-            statusCharts.glucose.glucoseDisplayRange = LoopConstants.glucoseChartDefaultDisplayBoundClamped
-        } else {
-            statusCharts.glucose.glucoseDisplayRange = LoopConstants.glucoseChartDefaultDisplayBound
-        }
 
         registerPumpManager()
         registerCGMManager()
@@ -132,10 +128,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 self.reloadData(animated: true)
             }
             .store(in: &cancellables)
-
-        if let gestureRecognizer = charts.gestureRecognizer {
-            tableView.addGestureRecognizer(gestureRecognizer)
-        }
 
         tableView.estimatedRowHeight = 74
 
@@ -354,28 +346,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
         deviceManager.pumpManager?.addStatusObserver(self, queue: .main)
     }
     
-    private lazy var statusCharts = StatusChartsManager(colors: .primary, settings: .default, traitCollection: traitCollection)
-
     override func createChartsManager() -> ChartsManager {
-        return statusCharts
-    }
-
-    private func updateChartDateRange() {
-        // How far back should we show data? Use the screen size as a guide.
-        let availableWidth = (refreshContext.newSize ?? tableView.bounds.size).width - charts.fixedHorizontalMargin
-
-        let totalHours = floor(Double(availableWidth / LoopConstants.minimumChartWidthPerHour))
-        let futureHours = ceil(deviceManager.doseStore.longestEffectDuration.hours)
-        let historyHours = max(LoopConstants.statusChartMinimumHistoryDisplay.hours, totalHours - futureHours)
-
-        let date = Date(timeIntervalSinceNow: -TimeInterval(hours: historyHours))
-        let chartStartDate = Calendar.current.nextDate(after: date, matching: DateComponents(minute: 0), matchingPolicy: .strict, direction: .backward) ?? date
-        if charts.startDate != chartStartDate {
-            refreshContext.formUnion(RefreshContext.all)
-        }
-        charts.startDate = chartStartDate
-        charts.maxEndDate = chartStartDate.addingTimeInterval(.hours(totalHours))
-        charts.updateEndDate(charts.maxEndDate)
+        // Charts have been removed from this screen; provide an empty manager to satisfy the base class.
+        return ChartsManager(colors: .primary, settings: .default, charts: [], traitCollection: traitCollection)
     }
 
     override func reloadData(animated: Bool = false) {
@@ -392,8 +365,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
             return
         }
 
-        updateChartDateRange()
-
         if case .bolusing = statusRowMode, bolusProgressReporter?.progress.isComplete == true {
             refreshContext.update(with: .status)
         }
@@ -406,7 +377,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
         guard active && visible && !refreshContext.isEmpty else {
             updateBannerRow(animated: animated)
-            redrawCharts()
             return
         }
 
@@ -418,14 +388,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
         reloading = true
 
         let reloadGroup = DispatchGroup()
-        var glucoseSamples: [StoredGlucoseSample]?
         var predictedGlucoseValues: [GlucoseValue]?
         var iobValues: [InsulinValue]?
-        var doseEntries: [DoseEntry]?
-        var totalDelivery: Double?
         var cobValues: [CarbValue]?
         var carbsOnBoard: HKQuantity?
-        let startDate = charts.startDate
+        let startDate = Date(timeIntervalSinceNow: -LoopConstants.statusChartMinimumHistoryDisplay)
         let basalDeliveryState = self.basalDeliveryState
         let automaticDosingEnabled = automaticDosingStatus.automaticDosingEnabled
 
@@ -479,20 +446,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
             reloadGroup.leave()
         }
 
-        if currentContext.contains(.glucose) {
-            reloadGroup.enter()
-            deviceManager.glucoseStore.getGlucoseSamples(start: startDate, end: nil) { (result) -> Void in
-                switch result {
-                case .failure(let error):
-                    self.log.error("Failure getting glucose samples: %{public}@", String(describing: error))
-                    glucoseSamples = nil
-                case .success(let samples):
-                    glucoseSamples = samples
-                }
-                reloadGroup.leave()
-            }
-        }
-
         if currentContext.contains(.insulin) {
             reloadGroup.enter()
             deviceManager.doseStore.getInsulinOnBoardValues(start: startDate, end: nil, basalDosingEnd: nil) { (result) -> Void in
@@ -504,32 +457,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 case .success(let values):
                     iobValues = values
                 }
-                reloadGroup.leave()
-            }
-
-            reloadGroup.enter()
-            deviceManager.doseStore.getNormalizedDoseEntries(start: startDate, end: nil) { (result) -> Void in
-                switch result {
-                case .failure(let error):
-                    self.log.error("DoseStore failed to get normalized dose entries: %{public}@", String(describing: error))
-                    retryContext.update(with: .insulin)
-                    doseEntries = []
-                case .success(let doses):
-                    doseEntries = doses
-                }
-                reloadGroup.leave()
-            }
-
-            reloadGroup.enter()
-            deviceManager.doseStore.getTotalUnitsDelivered(since: Calendar.current.startOfDay(for: Date())) { (result) in
-                switch result {
-                case .failure:
-                    retryContext.update(with: .insulin)
-                    totalDelivery = nil
-                case .success(let total):
-                    totalDelivery = total.value
-                }
-
                 reloadGroup.leave()
             }
         }
@@ -549,64 +476,28 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
 
         reloadGroup.notify(queue: .main) {
-            /// Update the chart data
-
-            // Glucose
-            if let glucoseSamples = glucoseSamples {
-                self.statusCharts.setGlucoseValues(glucoseSamples)
-            }
-            if (automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled), let predictedGlucoseValues = predictedGlucoseValues {
-                self.statusCharts.setPredictedGlucoseValues(predictedGlucoseValues)
-            } else {
-                self.statusCharts.setPredictedGlucoseValues([])
-            }
-            if !FeatureFlags.predictedGlucoseChartClampEnabled,
-                let lastPoint = self.statusCharts.glucose.predictedGlucosePoints.last?.y
+            // Eventual Glucose
+            if (automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled),
+                let eventualGlucose = predictedGlucoseValues?.last
             {
-                self.eventualGlucoseDescription = String(describing: lastPoint)
+                self.eventualGlucoseDescription = self.deviceManager.displayGlucosePreference.format(eventualGlucose.quantity)
             } else {
-                // if the predicted glucose values are clamped, the eventually glucose description should not be displayed, since it may not align with what is being charted.
                 self.eventualGlucoseDescription = nil
             }
-            if currentContext.contains(.targets) {
-                self.statusCharts.targetGlucoseSchedule = self.deviceManager.loopManager.settings.glucoseTargetRangeSchedule
-                self.statusCharts.preMealOverride = self.deviceManager.loopManager.settings.preMealOverride
-                self.statusCharts.scheduleOverride = self.deviceManager.loopManager.settings.scheduleOverride
-            }
-            if self.statusCharts.scheduleOverride?.hasFinished() == true {
-                self.statusCharts.scheduleOverride = nil
-            }
-
-            let charts = self.statusCharts
 
             // Active Insulin
-            if let iobValues = iobValues {
-                charts.setIOBValues(iobValues)
-            }
-
             // Show the larger of the value either before or after the current date
-            if let maxValue = charts.iob.iobPoints.allElementsAdjacent(to: Date()).max(by: {
-                return $0.y.scalar < $1.y.scalar
-            }) {
-                self.currentIOBDescription = String(describing: maxValue.y)
-            } else {
-                self.currentIOBDescription = nil
-            }
-
-            // Insulin Delivery
-            if let doseEntries = doseEntries {
-                charts.setDoseEntries(doseEntries)
-            }
-            if let totalDelivery = totalDelivery {
-                self.totalDelivery = totalDelivery
+            if let iobValues = iobValues {
+                if let currentIOB = iobValues.allElementsAdjacent(to: Date()).max(by: { $0.value < $1.value }) {
+                    self.currentIOBDescription = self.insulinFormatter.string(from: HKQuantity(unit: .internationalUnit(), doubleValue: currentIOB.value))
+                } else {
+                    self.currentIOBDescription = nil
+                }
             }
 
             // Active Carbohydrates
-            if let cobValues = cobValues {
-                charts.setCOBValues(cobValues)
-            }
-            if let index = charts.cob.cobPoints.closestIndex(priorTo: Date()) {
-                self.currentCOBDescription = String(describing: charts.cob.cobPoints[index].y)
+            if let currentCOB = cobValues?.closestPrior(to: Date()) {
+                self.currentCOBDescription = self.carbFormatter.string(from: currentCOB.quantity)
             } else if let carbsOnBoard = carbsOnBoard {
                 self.currentCOBDescription = self.carbFormatter.string(from: carbsOnBoard)
             } else {
@@ -617,7 +508,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             if let hudView = self.hudView {
                 // CGM Status
                 if let glucose = self.deviceManager.glucoseStore.latestGlucose {
-                    let unit = self.statusCharts.glucose.glucoseUnit
+                    let unit = self.deviceManager.displayGlucosePreference.unit
                     hudView.cgmStatusHUD.setGlucoseQuantity(glucose.quantity.doubleValue(for: unit),
                                                             at: glucose.startDate,
                                                             unit: unit,
@@ -641,8 +532,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
             self.updateBannerAndHUDandStatusRows(statusRowMode: statusRowMode, newSize: currentContext.newSize, animated: animated)
 
-            self.redrawCharts()
-
             self.tableView.endUpdates()
 
             self.reloading = false
@@ -661,31 +550,13 @@ final class StatusTableViewController: LoopChartsTableViewController {
         case alertWarning
         case hud
         case status
-        case charts
     }
 
-    // MARK: - Chart Section Data
-
-    private enum ChartRow: Int, CaseIterable {
-        case glucose
-        case iob
-        case dose
-        case cob
-    }
-
-    // MARK: Glucose
+    // MARK: - Status Metrics Data
 
     private var eventualGlucoseDescription: String?
 
-    // MARK: IOB
-
     private var currentIOBDescription: String?
-
-    // MARK: Dose
-
-    private var totalDelivery: Double?
-
-    // MARK: COB
 
     private var currentCOBDescription: String?
 
@@ -823,19 +694,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
         tableView.endUpdates()
     }
 
-    private func redrawCharts() {
-        tableView.beginUpdates()
-        charts.prerender()
-        for case let cell as ChartTableViewCell in tableView.visibleCells {
-            cell.reloadChart()
-
-            if let indexPath = tableView.indexPath(for: cell) {
-                self.tableView(tableView, updateSubtitleFor: cell, at: indexPath)
-            }
-        }
-        tableView.endUpdates()
-    }
-
     // MARK: - Toolbar data
 
     private var preMealMode: Bool? = nil {
@@ -885,8 +743,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
             return shouldShowBannerWarning ? 1 : 0
         case .hud:
             return shouldShowHUD ? 1 : 0
-        case .charts:
-            return ChartRow.allCases.count
         case .status:
             return shouldShowStatus ? StatusRow.allCases.count : 0
         }
@@ -988,41 +844,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
         case .hud:
             let cell = tableView.dequeueReusableCell(withIdentifier: HUDViewTableViewCell.className, for: indexPath) as! HUDViewTableViewCell
             hudView = cell.hudView
-
-            return cell
-        case .charts:
-            let cell = tableView.dequeueReusableCell(withIdentifier: ChartTableViewCell.className, for: indexPath) as! ChartTableViewCell
-
-            switch ChartRow(rawValue: indexPath.row)! {
-            case .glucose:
-                cell.setChartGenerator(generator: { [weak self] (frame) in
-                    return self?.statusCharts.glucoseChart(withFrame: frame)?.view
-                })
-                cell.setTitleLabelText(label: NSLocalizedString("Glucose", comment: "The title of the glucose and prediction graph"))
-                cell.doesNavigate = automaticDosingStatus.automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled
-            case .iob:
-                cell.setChartGenerator(generator: { [weak self] (frame) in
-                    return self?.statusCharts.iobChart(withFrame: frame)?.view
-                })
-                cell.setTitleLabelText(label: NSLocalizedString("Active Insulin", comment: "The title of the Insulin On-Board graph"))
-            case .dose:
-                cell.setChartGenerator(generator: { [weak self] (frame) in
-                    return self?.statusCharts.doseChart(withFrame: frame)?.view
-                })
-                cell.setTitleLabelText(label: NSLocalizedString("Insulin Delivery", comment: "The title of the insulin delivery graph"))
-            case .cob:
-                cell.setChartGenerator(generator: { [weak self] (frame) in
-                    return self?.statusCharts.cobChart(withFrame: frame)?.view
-                })
-                cell.setTitleLabelText(label: NSLocalizedString("Active Carbohydrates", comment: "The title of the Carbs On-Board graph"))
-            }
-
-            self.tableView(tableView, updateSubtitleFor: cell, at: indexPath)
-
-            let alpha: CGFloat = charts.gestureRecognizer?.state == .possible ? 1 : 0
-            cell.setAlpha(alpha: alpha)
-
-            cell.setSubtitleTextColor(color: UIColor.secondaryLabel)
 
             return cell
         case .status:
@@ -1143,65 +964,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
     }
 
-    private func tableView(_ tableView: UITableView, updateSubtitleFor cell: ChartTableViewCell, at indexPath: IndexPath) {
-        switch Section(rawValue: indexPath.section)! {
-        case .charts:
-            switch ChartRow(rawValue: indexPath.row)! {
-            case .glucose:
-                if let eventualGlucose = eventualGlucoseDescription {
-                    cell.setSubtitleLabel(label: String(format: NSLocalizedString("Eventually %@", comment: "The subtitle format describing eventual glucose. (1: localized glucose value description)"), eventualGlucose))
-                } else {
-                    cell.setSubtitleLabel(label: nil)
-                }
-                cell.doesNavigate = automaticDosingStatus.automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled
-            case .iob:
-                if let currentIOB = currentIOBDescription {
-                    cell.setSubtitleLabel(label: currentIOB)
-                } else {
-                    cell.setSubtitleLabel(label: nil)
-                }
-            case .dose:
-                let integerFormatter = NumberFormatter()
-                integerFormatter.maximumFractionDigits = 0
-
-                if  let total = totalDelivery,
-                    let totalString = integerFormatter.string(from: total) {
-                    cell.setSubtitleLabel(label: String(format: NSLocalizedString("%@ U Total", comment: "The subtitle format describing total insulin. (1: localized insulin total)"), totalString))
-                } else {
-                    cell.setSubtitleLabel(label: nil)
-                }
-            case .cob:
-                if let currentCOB = currentCOBDescription {
-                    cell.setSubtitleLabel(label: currentCOB)
-                } else {
-                    cell.setSubtitleLabel(label: nil)
-                }
-            }
-        case .hud, .status, .alertWarning:
-            break
-        }
-    }
-
     // MARK: - UITableViewDelegate
-
-    override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        switch Section(rawValue: indexPath.section)! {
-        case .charts:
-            // Compute the height of the HUD, defaulting to 70
-            let hudHeight = ceil(hudView?.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).height ?? 74)
-            var availableSize = max(tableView.bounds.width, tableView.bounds.height)
-            availableSize -= (tableView.safeAreaInsets.top + tableView.safeAreaInsets.bottom + hudHeight)
-
-            switch ChartRow(rawValue: indexPath.row)! {
-            case .glucose:
-                return max(106, 0.37 * availableSize)
-            case .iob, .dose, .cob:
-                return max(106, 0.21 * availableSize)
-            }
-        case .hud, .status, .alertWarning:
-            return UITableView.automaticDimension
-        }
-    }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         switch Section(rawValue: indexPath.section)! {
@@ -1244,7 +1007,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                     case .preMeal, .legacyWorkout:
                         break
                     default:
-                        let vc = AddEditOverrideTableViewController(glucoseUnit: statusCharts.glucose.glucoseUnit)
+                        let vc = AddEditOverrideTableViewController(glucoseUnit: deviceManager.displayGlucosePreference.unit)
                         vc.inputMode = .editOverride(override)
                         vc.delegate = self
                         show(vc, sender: tableView.cellForRow(at: indexPath))
@@ -1274,17 +1037,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 default:
                     break
                 }
-            }
-        case .charts:
-            switch ChartRow(rawValue: indexPath.row)! {
-            case .glucose:
-                if automaticDosingStatus.automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled {
-                    performSegue(withIdentifier: PredictionTableViewController.className, sender: indexPath)
-                }
-            case .iob, .dose:
-                performSegue(withIdentifier: InsulinDeliveryTableViewController.className, sender: indexPath)
-            case .cob:
-                performSegue(withIdentifier: CarbAbsorptionViewController.className, sender: indexPath)
             }
         }
     }
@@ -1350,7 +1102,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 vc.scheduledOverride = deviceManager.loopManager.settings.scheduleOverride
             }
             vc.presets = deviceManager.loopManager.settings.overridePresets
-            vc.glucoseUnit = statusCharts.glucose.glucoseUnit
+            vc.glucoseUnit = deviceManager.displayGlucosePreference.unit
             vc.overrideHistory = deviceManager.loopManager.overrideHistory.getEvents()
             vc.delegate = self
         case let vc as PredictionTableViewController:
