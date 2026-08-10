@@ -25,6 +25,98 @@ private extension RefreshContext {
     static let all: Set<RefreshContext> = [.status, .glucose, .insulin, .carbs, .targets]
 }
 
+/// A full-screen, slowly breathing gradient behind the status table. A single palette
+/// hue (per glucose range) fades from the top of the screen to nearly clear, giving the
+/// Liquid Glass controls colored content to refract.
+private final class GradientBackgroundView: UIView {
+
+    /// The palette hue; nil renders a neutral background
+    var baseColor: UIColor? {
+        didSet {
+            updateColors()
+        }
+    }
+
+    private let gradientLayer: CAGradientLayer = {
+        let layer = CAGradientLayer()
+        layer.startPoint = CGPoint(x: 0.5, y: 0)
+        layer.endPoint = CGPoint(x: 0.5, y: 1)
+        layer.locations = [0.0, 0.7]
+        return layer
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+
+        backgroundColor = .secondarySystemBackground
+        layer.addSublayer(gradientLayer)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradientLayer.frame = bounds
+        CATransaction.commit()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+
+        // CGColors don't adapt automatically; re-resolve for the new appearance
+        updateColors()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+
+        // Animations are removed when the app backgrounds; reassert when reattached
+        if window != nil {
+            startBreathing()
+        }
+    }
+
+    private func updateColors() {
+        if let baseColor = baseColor {
+            let resolved = baseColor.resolvedColor(with: traitCollection)
+            gradientLayer.colors = [
+                resolved.withAlphaComponent(0.28).cgColor,
+                resolved.withAlphaComponent(0.03).cgColor,
+            ]
+        } else {
+            gradientLayer.colors = nil
+        }
+        startBreathing()
+    }
+
+    private static let breatheAnimationKey = "com.loopkit.Loop.statusGradientBreathe"
+
+    private func startBreathing() {
+        guard !UIAccessibility.isReduceMotionEnabled else {
+            gradientLayer.removeAnimation(forKey: Self.breatheAnimationKey)
+            return
+        }
+        guard gradientLayer.animation(forKey: Self.breatheAnimationKey) == nil else {
+            return
+        }
+
+        // A slow, subtle drift of the gradient's falloff
+        let animation = CABasicAnimation(keyPath: "locations")
+        animation.fromValue = [0.0, 0.65]
+        animation.toValue = [0.35, 1.0]
+        animation.duration = 7
+        animation.autoreverses = true
+        animation.repeatCount = .infinity
+        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        gradientLayer.add(animation, forKey: Self.breatheAnimationKey)
+    }
+}
+
 final class StatusTableViewController: LoopChartsTableViewController {
 
     private let log = OSLog(category: "StatusTableViewController")
@@ -143,7 +235,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         addScenarioStepGestureRecognizers()
 
         tableView.backgroundColor = .secondarySystemBackground
-    
+        tableView.backgroundView = gradientBackgroundView
     }
 
     override func didReceiveMemoryWarning() {
@@ -415,7 +507,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
         reloading = true
 
         let reloadGroup = DispatchGroup()
-        var glucoseSamples: [StoredGlucoseSample]?
         var predictedGlucoseValues: [GlucoseValue]?
         var iobValues: [InsulinValue]?
         var cobValues: [CarbValue]?
@@ -480,20 +571,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
             carbsOnBoard = state.carbsOnBoard?.quantity
 
             reloadGroup.leave()
-        }
-
-        if currentContext.contains(.glucose) {
-            reloadGroup.enter()
-            deviceManager.glucoseStore.getGlucoseSamples(start: Date(timeIntervalSinceNow: -Self.sparklineHistoryInterval), end: nil) { (result) -> Void in
-                switch result {
-                case .failure(let error):
-                    self.log.error("Failure getting glucose samples: %{public}@", String(describing: error))
-                    glucoseSamples = nil
-                case .success(let samples):
-                    glucoseSamples = samples
-                }
-                reloadGroup.leave()
-            }
         }
 
         if currentContext.contains(.insulin) {
@@ -622,22 +699,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
                     heroStatusView.glucoseRangeCategory = nil
                 }
 
-                // Sparkline: only refresh when this reload actually fetched glucose history
-                if let glucoseSamples = glucoseSamples {
-                    let unit = self.deviceManager.displayGlucosePreference.unit
-                    let predictionEnd = Date(timeIntervalSinceNow: Self.sparklineHistoryInterval)
-                    let predicted: [GlucoseValue]
-                    if automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled {
-                        predicted = (predictedGlucoseValues ?? []).filter { $0.startDate <= predictionEnd }
-                    } else {
-                        predicted = []
-                    }
-                    heroStatusView.setSparklineValues(
-                        historical: glucoseSamples.map { ($0.startDate, $0.quantity.doubleValue(for: unit)) },
-                        predicted: predicted.map { ($0.startDate, $0.quantity.doubleValue(for: unit)) }
-                    )
-                }
-
                 if let eventualGlucose = self.eventualGlucoseDescription {
                     heroStatusView.eventualGlucoseText = String(format: NSLocalizedString("Eventually %@", comment: "The subtitle format describing eventual glucose. (1: localized glucose value description)"), eventualGlucose)
                 } else {
@@ -696,10 +757,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
     private var lastManualBolus: DoseEntry?
 
     private static let lastManualBolusLookback = TimeInterval(hours: 24)
-
-    /// How much glucose history the hero sparkline shows, and how far ahead its
-    /// dashed prediction extends.
-    private static let sparklineHistoryInterval = TimeInterval(hours: 3)
 
     private lazy var bolusTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -812,7 +869,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
 
         cell.contentConfiguration = content
-        cell.backgroundColor = .secondarySystemBackground
+        cell.backgroundColor = .clear
         cell.selectionStyle = .none
     }
 
@@ -963,7 +1020,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             super.init(style: style, reuseIdentifier: reuseIdentifier)
 
             selectionStyle = .none
-            backgroundColor = .secondarySystemBackground
+            backgroundColor = .clear
 
             heroView.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview(heroView)
@@ -991,7 +1048,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             super.init(style: style, reuseIdentifier: reuseIdentifier)
 
             selectionStyle = .none
-            backgroundColor = .secondarySystemBackground
+            backgroundColor = .clear
 
             let columns = [
                 (NSLocalizedString("Active Insulin", comment: "The title of the active insulin stats column"), iobValueLabel),
@@ -1116,7 +1173,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             super.init(style: style, reuseIdentifier: reuseIdentifier)
 
             selectionStyle = .none
-            backgroundColor = .secondarySystemBackground
+            backgroundColor = .clear
 
             bolusButton.addTarget(self, action: #selector(bolusTapped), for: .touchUpInside)
             carbsButton.addTarget(self, action: #selector(carbsTapped), for: .touchUpInside)
@@ -1167,6 +1224,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             config.image = image?.withRenderingMode(.alwaysTemplate)
             config.imagePlacement = .top
             config.imagePadding = 4
+            config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 20, weight: .regular)
             config.baseForegroundColor = color
             config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 4, bottom: 8, trailing: 4)
             return UIButton(configuration: config)
@@ -1180,7 +1238,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                                             image: UIImage(systemName: "pause.circle"),
                                             color: .critical)
             settingsButton = Self.makeButton(title: NSLocalizedString("Settings", comment: "The label of the settings action button"),
-                                             image: UIImage(named: "settings"),
+                                             image: UIImage(systemName: "gearshape"),
                                              color: .label)
 
             // A single floating glass capsule containing the three tab-style items,
@@ -1196,7 +1254,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             super.init(style: style, reuseIdentifier: reuseIdentifier)
 
             selectionStyle = .none
-            backgroundColor = .secondarySystemBackground
+            backgroundColor = .clear
 
             preMealButton.addTarget(self, action: #selector(preMealTapped), for: .touchUpInside)
             suspendButton.addTarget(self, action: #selector(suspendTapped), for: .touchUpInside)
@@ -1369,6 +1427,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             }
         case .hud:
             let cell = tableView.dequeueReusableCell(withIdentifier: HUDViewTableViewCell.className, for: indexPath) as! HUDViewTableViewCell
+            cell.backgroundColor = .clear
             hudView = cell.hudView
 
             return cell
@@ -1377,7 +1436,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             func getTitleSubtitleCell() -> TitleSubtitleTableViewCell {
                 let cell = tableView.dequeueReusableCell(withIdentifier: TitleSubtitleTableViewCell.className, for: indexPath) as! TitleSubtitleTableViewCell
                 cell.selectionStyle = .none
-                cell.backgroundColor = .secondarySystemBackground
+                cell.backgroundColor = .clear
                 cell.titleLabel.text = nil
                 cell.subtitleLabel.text = nil
                 cell.accessoryView = nil
@@ -1441,7 +1500,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                     progressCell.totalUnits = dose.programmedUnits
                     progressCell.tintColor = .insulinTintColor
                     progressCell.deliveredUnits = bolusProgressReporter?.progress.deliveredUnits
-                    progressCell.backgroundColor = .secondarySystemBackground
+                    progressCell.backgroundColor = .clear
                     return progressCell
                 case .cancelingBolus:
                     let cell = getTitleSubtitleCell()
@@ -1467,7 +1526,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 case .onboardingSuspended:
                     let cell = tableView.dequeueReusableCell(withIdentifier: IconTitleSubtitleTableViewCell.className, for: indexPath) as! IconTitleSubtitleTableViewCell
                     cell.selectionStyle = .default
-                    cell.backgroundColor = .secondarySystemBackground
+                    cell.backgroundColor = .clear
                     cell.iconImageView.image = UIImage(systemName: "exclamationmark.circle.fill")
                     cell.iconImageView.tintColor = .warning
                     cell.iconImageView.contentMode = .scaleAspectFit
@@ -1980,10 +2039,16 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
     // MARK: - HUDs
 
+    private let gradientBackgroundView = GradientBackgroundView()
+
     private var heroStatusView: StatusHeroView? {
         didSet {
             guard let heroStatusView = heroStatusView, heroStatusView != oldValue else {
                 return
+            }
+
+            heroStatusView.backgroundTintDidChange = { [weak self] baseColor in
+                self?.gradientBackgroundView.baseColor = baseColor
             }
 
             heroStatusView.loopCompletionHUD.stateColors = .loopStatus
