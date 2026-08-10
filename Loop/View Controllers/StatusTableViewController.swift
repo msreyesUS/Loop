@@ -691,12 +691,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
             if let glucoseSamples = glucoseSamples {
                 let unit = self.deviceManager.displayGlucosePreference.unit
                 self.chartHistoricalGlucose = glucoseSamples.map { ($0.startDate, $0.quantity.doubleValue(for: unit)) }
-                if let targetSchedule = self.deviceManager.loopManager.settings.glucoseTargetRangeSchedule {
-                    let range = targetSchedule.quantityRange(at: Date())
-                    self.chartTargetRange = range.lowerBound.doubleValue(for: unit)...range.upperBound.doubleValue(for: unit)
-                } else {
-                    self.chartTargetRange = nil
-                }
+                self.chartTargetRange = Self.chartInRangeBand.lowerBound.doubleValue(for: unit)...Self.chartInRangeBand.upperBound.doubleValue(for: unit)
+                let displayBound = LoopConstants.glucoseChartDefaultDisplayRangeWide
+                self.chartDisplayRange = displayBound.lowerBound.doubleValue(for: unit)...displayBound.upperBound.doubleValue(for: unit)
                 self.updateChartCell()
             }
 
@@ -756,8 +753,14 @@ final class StatusTableViewController: LoopChartsTableViewController {
     /// How much glucose history the chart card shows
     private static let chartHistoryInterval = TimeInterval(hours: 3)
 
+    /// The conventional time-in-range band (70–180 mg/dL, i.e. 3.9–10.0 mmol/L),
+    /// matching how CGM apps display "in range"
+    private static let chartInRangeBand =
+        HKQuantity(unit: .milligramsPerDeciliter, doubleValue: 70)...HKQuantity(unit: .milligramsPerDeciliter, doubleValue: 180)
+
     private var chartHistoricalGlucose: [(date: Date, value: Double)] = []
     private var chartTargetRange: ClosedRange<Double>?
+    private var chartDisplayRange: ClosedRange<Double>?
 
     private lazy var bolusTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -898,7 +901,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
     private func configureChartCell(_ cell: GlucoseChartTableViewCell) {
         cell.titleLabel.text = NSLocalizedString("Glucose – Last 3 Hours", comment: "The title of the status screen glucose chart card")
         cell.unitLabel.text = deviceManager.displayGlucosePreference.unit.localizedShortUnitString
-        cell.chartView.setData(historical: chartHistoricalGlucose, predicted: [], targetRange: chartTargetRange)
+        cell.chartView.setData(historical: chartHistoricalGlucose, predicted: [], targetRange: chartTargetRange, displayRange: chartDisplayRange)
     }
 
     private func updateChartCell() {
@@ -1122,6 +1125,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         private var historical: [(date: Date, value: Double)] = []
         private var predicted: [(date: Date, value: Double)] = []
         private var targetRange: ClosedRange<Double>?
+        private var displayRange: ClosedRange<Double>?
 
         private lazy var axisTimeFormatter: DateFormatter = {
             let formatter = DateFormatter()
@@ -1141,10 +1145,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
             fatalError("init(coder:) has not been implemented")
         }
 
-        func setData(historical: [(date: Date, value: Double)], predicted: [(date: Date, value: Double)], targetRange: ClosedRange<Double>?) {
+        func setData(historical: [(date: Date, value: Double)], predicted: [(date: Date, value: Double)], targetRange: ClosedRange<Double>?, displayRange: ClosedRange<Double>?) {
             self.historical = historical.sorted { $0.date < $1.date }
             self.predicted = predicted.sorted { $0.date < $1.date }
             self.targetRange = targetRange
+            self.displayRange = displayRange
             setNeedsDisplay()
         }
 
@@ -1163,13 +1168,20 @@ final class StatusTableViewController: LoopChartsTableViewController {
             guard maxDate > minDate else { return }
             let dateSpan = maxDate.timeIntervalSince(minDate)
 
-            var valueMin = all.map(\.value).min() ?? targetRange?.lowerBound ?? 0
-            var valueMax = all.map(\.value).max() ?? targetRange?.upperBound ?? 1
+            // A fixed display range keeps the line calm (like the CGM app's chart)
+            // instead of amplifying small wiggles by auto-scaling to the data;
+            // the domain only expands when data or the target band falls outside it.
+            var valueMin = displayRange?.lowerBound ?? all.map(\.value).min() ?? targetRange?.lowerBound ?? 0
+            var valueMax = displayRange?.upperBound ?? all.map(\.value).max() ?? targetRange?.upperBound ?? 1
+            if let dataMin = all.map(\.value).min(), let dataMax = all.map(\.value).max() {
+                valueMin = min(valueMin, dataMin)
+                valueMax = max(valueMax, dataMax)
+            }
             if let targetRange = targetRange {
                 valueMin = min(valueMin, targetRange.lowerBound)
                 valueMax = max(valueMax, targetRange.upperBound)
             }
-            let padding = max((valueMax - valueMin) * 0.15, 0.5)
+            let padding = max((valueMax - valueMin) * 0.05, 0.2)
             valueMin -= padding
             valueMax += padding
             let valueSpan = valueMax - valueMin
