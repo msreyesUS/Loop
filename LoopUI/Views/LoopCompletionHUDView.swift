@@ -269,6 +269,7 @@ public final class StatusHeroView: UIView {
         static let ringDiameter: CGFloat = 200
         static let glucoseFontSize: CGFloat = 62
         static let trendIconPointSize: CGFloat = 28
+        static let sparklineHeight: CGFloat = 44
     }
 
     public let loopCompletionHUD = LoopCompletionHUDView(frame: CGRect(x: 0, y: 0, width: LayoutConstants.ringDiameter, height: LayoutConstants.ringDiameter))
@@ -295,6 +296,13 @@ public final class StatusHeroView: UIView {
             updateBackgroundTint()
         }
     }
+
+    private let gradientLayer: CAGradientLayer = {
+        let layer = CAGradientLayer()
+        layer.startPoint = CGPoint(x: 0.5, y: 0)
+        layer.endPoint = CGPoint(x: 0.5, y: 1)
+        return layer
+    }()
 
     private lazy var viewModel = CGMStatusHUDViewModel(staleGlucoseValueHandler: { [weak self] in
         self?.deltaString = nil
@@ -335,6 +343,14 @@ public final class StatusHeroView: UIView {
         return label
     }()
 
+    private let sparklineView = GlucoseSparklineView()
+
+    /// Updates the sparkline below the ring. Values are unitless; only their relative
+    /// shape is drawn. Historical values render as a solid line, predicted as a dashed tail.
+    public func setSparklineValues(historical: [(date: Date, value: Double)], predicted: [(date: Date, value: Double)]) {
+        sparklineView.setValues(historical: historical, predicted: predicted)
+    }
+
     public override init(frame: CGRect) {
         super.init(frame: frame)
         setup()
@@ -346,6 +362,8 @@ public final class StatusHeroView: UIView {
     }
 
     private func setup() {
+        layer.insertSublayer(gradientLayer, at: 0)
+
         let valueStack = UIStackView(arrangedSubviews: [glucoseLabel, trendImageView])
         valueStack.axis = .horizontal
         valueStack.alignment = .center
@@ -360,8 +378,12 @@ public final class StatusHeroView: UIView {
         glucoseStack.translatesAutoresizingMaskIntoConstraints = false
         eventualGlucoseLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        loopCompletionHUD.translatesAutoresizingMaskIntoConstraints = false
+        sparklineView.translatesAutoresizingMaskIntoConstraints = false
+
         addSubview(loopCompletionHUD)
         addSubview(glucoseStack)
+        addSubview(sparklineView)
         addSubview(eventualGlucoseLabel)
 
         // The bottom constraint yields (999) rather than conflicting with the temporary
@@ -380,7 +402,12 @@ public final class StatusHeroView: UIView {
             glucoseStack.centerYAnchor.constraint(equalTo: loopCompletionHUD.centerYAnchor),
             glucoseStack.widthAnchor.constraint(lessThanOrEqualTo: loopCompletionHUD.widthAnchor, constant: -32),
 
-            eventualGlucoseLabel.topAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 12),
+            sparklineView.topAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 12),
+            sparklineView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 24),
+            sparklineView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -24),
+            sparklineView.heightAnchor.constraint(equalToConstant: LayoutConstants.sparklineHeight),
+
+            eventualGlucoseLabel.topAnchor.constraint(equalTo: sparklineView.bottomAnchor, constant: 8),
             eventualGlucoseLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
             eventualGlucoseLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 8),
             bottomConstraint,
@@ -396,11 +423,39 @@ public final class StatusHeroView: UIView {
     private func updateBackgroundTint() {
         // When the loop is stale, drop the tint to neutral so the red ring is the only
         // red element on screen: a red ring on a red field must never happen.
+        let base: UIColor?
         if loopCompletionHUD.freshness == .stale {
-            backgroundColor = nil
+            base = nil
         } else {
-            backgroundColor = glucoseRangeCategory?.backgroundTintColor
+            base = glucoseRangeCategory?.backgroundGradientColor
         }
+
+        if let base = base {
+            // A very subtle top-to-bottom fade of the range color
+            let resolved = base.resolvedColor(with: traitCollection)
+            gradientLayer.colors = [
+                resolved.withAlphaComponent(0.22).cgColor,
+                resolved.withAlphaComponent(0.02).cgColor,
+            ]
+        } else {
+            gradientLayer.colors = nil
+        }
+    }
+
+    public override func layoutSubviews() {
+        super.layoutSubviews()
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradientLayer.frame = bounds
+        CATransaction.commit()
+    }
+
+    public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+
+        // CGColors don't adapt automatically; re-resolve for the new appearance
+        updateBackgroundTint()
     }
 
     public func setGlucoseQuantity(_ glucoseQuantity: Double,
@@ -441,5 +496,100 @@ public final class StatusHeroView: UIView {
 
     private func updateInfoLabel() {
         infoLabel.text = [viewModel.unitsString, deltaString].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+// MARK: - GlucoseSparklineView
+
+/// A lightweight, axis-free glucose sparkline: a solid line for recent history and a
+/// dashed tail for the prediction. Values are only drawn relative to one another.
+final class GlucoseSparklineView: UIView {
+
+    private var historical: [(date: Date, value: Double)] = []
+    private var predicted: [(date: Date, value: Double)] = []
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        commonInit()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        commonInit()
+    }
+
+    private func commonInit() {
+        isOpaque = false
+        backgroundColor = .clear
+        contentMode = .redraw
+    }
+
+    func setValues(historical: [(date: Date, value: Double)], predicted: [(date: Date, value: Double)]) {
+        self.historical = historical.sorted { $0.date < $1.date }
+        self.predicted = predicted.sorted { $0.date < $1.date }
+        setNeedsDisplay()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        setNeedsDisplay()
+    }
+
+    override func draw(_ rect: CGRect) {
+        let all = historical + predicted
+        guard all.count > 1,
+              let minDate = all.map(\.date).min(),
+              let maxDate = all.map(\.date).max(),
+              let minValue = all.map(\.value).min(),
+              let maxValue = all.map(\.value).max(),
+              maxDate > minDate
+        else {
+            return
+        }
+
+        let drawRect = bounds.insetBy(dx: 2, dy: 4)
+        let dateSpan = maxDate.timeIntervalSince(minDate)
+        // Guard against a flat line dividing by zero
+        let valueSpan = max(maxValue - minValue, 1e-6)
+
+        func point(for sample: (date: Date, value: Double)) -> CGPoint {
+            let x = drawRect.minX + CGFloat(sample.date.timeIntervalSince(minDate) / dateSpan) * drawRect.width
+            let y = drawRect.maxY - CGFloat((sample.value - minValue) / valueSpan) * drawRect.height
+            return CGPoint(x: x, y: y)
+        }
+
+        func path(for samples: [(date: Date, value: Double)]) -> UIBezierPath {
+            let path = UIBezierPath()
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            for (index, sample) in samples.enumerated() {
+                if index == 0 {
+                    path.move(to: point(for: sample))
+                } else {
+                    path.addLine(to: point(for: sample))
+                }
+            }
+            return path
+        }
+
+        if historical.count > 1 {
+            let historyPath = path(for: historical)
+            historyPath.lineWidth = 2
+            UIColor.glucoseTintColor.resolvedColor(with: traitCollection).setStroke()
+            historyPath.stroke()
+        }
+
+        // Connect the dashed prediction to the last historical point for continuity
+        var predictionSamples = predicted
+        if let lastHistorical = historical.last {
+            predictionSamples.insert(lastHistorical, at: 0)
+        }
+        if predictionSamples.count > 1 {
+            let predictionPath = path(for: predictionSamples)
+            predictionPath.lineWidth = 1.5
+            predictionPath.setLineDash([3, 3], count: 2, phase: 0)
+            UIColor.secondaryLabel.resolvedColor(with: traitCollection).setStroke()
+            predictionPath.stroke()
+        }
     }
 }

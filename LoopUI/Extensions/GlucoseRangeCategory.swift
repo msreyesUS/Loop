@@ -43,4 +43,17 @@ extension GlucoseRangeCategory {
             return .warningBackground
         }
     }
+
+    /// A vivid base color for subtle background gradients:
+    /// greenish in range, yellowish high, reddish low.
+    public var backgroundGradientColor: UIColor {
+        switch self {
+        case .normal:
+            return .fresh
+        case .low, .belowRange, .urgentLow:
+            return .critical
+        case .high, .aboveRange:
+            return .warning
+        }
+    }
 }

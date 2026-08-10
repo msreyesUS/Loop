@@ -415,6 +415,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         reloading = true
 
         let reloadGroup = DispatchGroup()
+        var glucoseSamples: [StoredGlucoseSample]?
         var predictedGlucoseValues: [GlucoseValue]?
         var iobValues: [InsulinValue]?
         var cobValues: [CarbValue]?
@@ -479,6 +480,20 @@ final class StatusTableViewController: LoopChartsTableViewController {
             carbsOnBoard = state.carbsOnBoard?.quantity
 
             reloadGroup.leave()
+        }
+
+        if currentContext.contains(.glucose) {
+            reloadGroup.enter()
+            deviceManager.glucoseStore.getGlucoseSamples(start: Date(timeIntervalSinceNow: -Self.sparklineHistoryInterval), end: nil) { (result) -> Void in
+                switch result {
+                case .failure(let error):
+                    self.log.error("Failure getting glucose samples: %{public}@", String(describing: error))
+                    glucoseSamples = nil
+                case .success(let samples):
+                    glucoseSamples = samples
+                }
+                reloadGroup.leave()
+            }
         }
 
         if currentContext.contains(.insulin) {
@@ -607,6 +622,22 @@ final class StatusTableViewController: LoopChartsTableViewController {
                     heroStatusView.glucoseRangeCategory = nil
                 }
 
+                // Sparkline: only refresh when this reload actually fetched glucose history
+                if let glucoseSamples = glucoseSamples {
+                    let unit = self.deviceManager.displayGlucosePreference.unit
+                    let predictionEnd = Date(timeIntervalSinceNow: Self.sparklineHistoryInterval)
+                    let predicted: [GlucoseValue]
+                    if automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled {
+                        predicted = (predictedGlucoseValues ?? []).filter { $0.startDate <= predictionEnd }
+                    } else {
+                        predicted = []
+                    }
+                    heroStatusView.setSparklineValues(
+                        historical: glucoseSamples.map { ($0.startDate, $0.quantity.doubleValue(for: unit)) },
+                        predicted: predicted.map { ($0.startDate, $0.quantity.doubleValue(for: unit)) }
+                    )
+                }
+
                 if let eventualGlucose = self.eventualGlucoseDescription {
                     heroStatusView.eventualGlucoseText = String(format: NSLocalizedString("Eventually %@", comment: "The subtitle format describing eventual glucose. (1: localized glucose value description)"), eventualGlucose)
                 } else {
@@ -665,6 +696,10 @@ final class StatusTableViewController: LoopChartsTableViewController {
     private var lastManualBolus: DoseEntry?
 
     private static let lastManualBolusLookback = TimeInterval(hours: 24)
+
+    /// How much glucose history the hero sparkline shows, and how far ahead its
+    /// dashed prediction extends.
+    private static let sparklineHistoryInterval = TimeInterval(hours: 3)
 
     private lazy var bolusTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -1052,7 +1087,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             var attributedTitle = AttributedString(title)
             attributedTitle.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
             config.attributedTitle = attributedTitle
-            config.image = image
+            config.image = image?.withRenderingMode(.alwaysTemplate)
             config.imagePlacement = .top
             config.imagePadding = 10
             config.cornerStyle = .large
@@ -1130,9 +1165,10 @@ final class StatusTableViewController: LoopChartsTableViewController {
             var attributedTitle = AttributedString(title)
             attributedTitle.font = UIFont.systemFont(ofSize: 16, weight: .medium)
             config.attributedTitle = attributedTitle
-            config.image = image
+            config.image = image?.withRenderingMode(.alwaysTemplate)
             config.imagePlacement = .leading
             config.imagePadding = 6
+            config.cornerStyle = .large
             config.baseForegroundColor = color
             config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 4, bottom: 12, trailing: 4)
             return UIButton(configuration: config)
