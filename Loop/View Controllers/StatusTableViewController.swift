@@ -55,6 +55,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         
         tableView.register(HeroStatusTableViewCell.self, forCellReuseIdentifier: HeroStatusTableViewCell.className)
         tableView.register(StatsTableViewCell.self, forCellReuseIdentifier: StatsTableViewCell.className)
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "LastBolusCell")
         tableView.register(BolusProgressTableViewCell.nib(), forCellReuseIdentifier: BolusProgressTableViewCell.className)
         tableView.register(AlertPermissionsDisabledWarningCell.self, forCellReuseIdentifier: AlertPermissionsDisabledWarningCell.className)
         tableView.register(MuteAlertsWarningCell.self, forCellReuseIdentifier: MuteAlertsWarningCell.className)
@@ -398,6 +399,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
         var iobValues: [InsulinValue]?
         var cobValues: [CarbValue]?
         var carbsOnBoard: HKQuantity?
+        var newLastManualBolus: DoseEntry?
+        var lastManualBolusUpdated = false
         let startDate = Date(timeIntervalSinceNow: -LoopConstants.statusChartMinimumHistoryDisplay)
         let basalDeliveryState = self.basalDeliveryState
         let automaticDosingEnabled = automaticDosingStatus.automaticDosingEnabled
@@ -471,6 +474,21 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 }
                 reloadGroup.leave()
             }
+
+            reloadGroup.enter()
+            deviceManager.doseStore.getNormalizedDoseEntries(start: Date(timeIntervalSinceNow: -Self.lastManualBolusLookback), end: nil) { (result) -> Void in
+                switch result {
+                case .failure(let error):
+                    self.log.error("DoseStore failed to get dose entries for last bolus: %{public}@", String(describing: error))
+                    retryContext.update(with: .insulin)
+                case .success(let doses):
+                    newLastManualBolus = doses
+                        .filter { $0.type == .bolus && $0.automatic != true && !$0.isMutable }
+                        .max(by: { $0.startDate < $1.startDate })
+                    lastManualBolusUpdated = true
+                }
+                reloadGroup.leave()
+            }
         }
 
         updatePresetModeAvailability(automaticDosingEnabled: automaticDosingEnabled)
@@ -516,7 +534,13 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 self.currentCOBDescription = nil
             }
 
+            // Last Bolus
+            if lastManualBolusUpdated {
+                self.lastManualBolus = newLastManualBolus
+            }
+
             self.updateStatsCell()
+            self.updateLastBolusCell()
 
             self.tableView.beginUpdates()
             if let hudView = self.hudView {
@@ -604,6 +628,20 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
     private var netBasalDescription: String?
 
+    /// The most recent non-automatic bolus, cached and refreshed under the insulin refresh context.
+    /// Automatic boluses (from the Automatic Bolus dosing strategy) are excluded so this doesn't
+    /// churn every five minutes.
+    private var lastManualBolus: DoseEntry?
+
+    private static let lastManualBolusLookback = TimeInterval(hours: 24)
+
+    private lazy var bolusTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
     private lazy var netBasalFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -614,6 +652,13 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
         return formatter
     }()
+
+    // MARK: - Stats Section Data
+
+    private enum StatsRow: Int, CaseIterable {
+        case metrics = 0
+        case lastBolus
+    }
 
     // MARK: - Loop Status Section Data
 
@@ -683,8 +728,31 @@ final class StatusTableViewController: LoopChartsTableViewController {
     }
 
     private func updateStatsCell() {
-        if let cell = tableView.cellForRow(at: IndexPath(row: 0, section: Section.stats.rawValue)) as? StatsTableViewCell {
+        if let cell = tableView.cellForRow(at: IndexPath(row: StatsRow.metrics.rawValue, section: Section.stats.rawValue)) as? StatsTableViewCell {
             configureStatsCell(cell)
+        }
+    }
+
+    private func configureLastBolusCell(_ cell: UITableViewCell) {
+        var content = UIListContentConfiguration.valueCell()
+        content.text = NSLocalizedString("Last bolus", comment: "The title of the last bolus row")
+
+        if let bolus = lastManualBolus,
+           let volumeString = insulinFormatter.string(from: HKQuantity(unit: .internationalUnit(), doubleValue: bolus.deliveredUnits ?? bolus.programmedUnits))
+        {
+            content.secondaryText = String(format: NSLocalizedString("%1$@ · %2$@", comment: "The format for the last bolus description. (1: localized insulin amount)(2: localized time)"), volumeString, bolusTimeFormatter.string(from: bolus.startDate))
+        } else {
+            content.secondaryText = "—"
+        }
+
+        cell.contentConfiguration = content
+        cell.backgroundColor = .secondarySystemBackground
+        cell.selectionStyle = .none
+    }
+
+    private func updateLastBolusCell() {
+        if let cell = tableView.cellForRow(at: IndexPath(row: StatsRow.lastBolus.rawValue, section: Section.stats.rawValue)) {
+            configureLastBolusCell(cell)
         }
     }
 
@@ -812,7 +880,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         case .hero:
             return 1
         case .stats:
-            return 1
+            return StatsRow.allCases.count
         case .hud:
             return shouldShowHUD ? 1 : 0
         case .status:
@@ -1026,10 +1094,18 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
             return cell
         case .stats:
-            let cell = tableView.dequeueReusableCell(withIdentifier: StatsTableViewCell.className, for: indexPath) as! StatsTableViewCell
-            configureStatsCell(cell)
+            switch StatsRow(rawValue: indexPath.row)! {
+            case .metrics:
+                let cell = tableView.dequeueReusableCell(withIdentifier: StatsTableViewCell.className, for: indexPath) as! StatsTableViewCell
+                configureStatsCell(cell)
 
-            return cell
+                return cell
+            case .lastBolus:
+                let cell = tableView.dequeueReusableCell(withIdentifier: "LastBolusCell", for: indexPath)
+                configureLastBolusCell(cell)
+
+                return cell
+            }
         case .hud:
             let cell = tableView.dequeueReusableCell(withIdentifier: HUDViewTableViewCell.className, for: indexPath) as! HUDViewTableViewCell
             hudView = cell.hudView
