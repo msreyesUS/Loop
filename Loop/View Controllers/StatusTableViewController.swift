@@ -53,6 +53,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         
         setupToolbarItems()
         
+        tableView.register(HeroStatusTableViewCell.self, forCellReuseIdentifier: HeroStatusTableViewCell.className)
         tableView.register(BolusProgressTableViewCell.nib(), forCellReuseIdentifier: BolusProgressTableViewCell.className)
         tableView.register(AlertPermissionsDisabledWarningCell.self, forCellReuseIdentifier: AlertPermissionsDisabledWarningCell.className)
         tableView.register(MuteAlertsWarningCell.self, forCellReuseIdentifier: MuteAlertsWarningCell.className)
@@ -81,6 +82,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                     }
 
                     self?.hudView?.loopCompletionHUD.loopInProgress = false
+                    self?.heroStatusView?.loopCompletionHUD.loopInProgress = false
                     self?.log.debug("[reloadData] from notification with context %{public}@", String(describing: context))
                     self?.reloadData(animated: true)
                 }
@@ -90,6 +92,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             notificationCenter.addObserver(forName: .LoopRunning, object: deviceManager.loopManager, queue: nil) { [weak self] _ in
                 DispatchQueue.main.async {
                     self?.hudView?.loopCompletionHUD.loopInProgress = true
+                    self?.heroStatusView?.loopCompletionHUD.loopInProgress = true
                 }
             },
             notificationCenter.addObserver(forName: .PumpManagerChanged, object: deviceManager, queue: nil) { [weak self] (notification: Notification) in
@@ -216,6 +219,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
     override var active: Bool {
         didSet {
             hudView?.loopCompletionHUD.assertTimer(active)
+            heroStatusView?.loopCompletionHUD.assertTimer(active)
             updateHUDActive()
         }
     }
@@ -360,6 +364,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
         // This should be kept up to date immediately
         hudView?.loopCompletionHUD.lastLoopCompleted = deviceManager.loopManager.lastLoopCompleted
+        heroStatusView?.loopCompletionHUD.lastLoopCompleted = deviceManager.loopManager.lastLoopCompleted
 
         guard !reloading && !deviceManager.authorizationRequired else {
             return
@@ -527,6 +532,32 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 hudView.pumpStatusHUD.lifecycleProgress = self.deviceManager.pumpLifecycleProgress
             }
 
+            // Hero glucose display
+            if let heroStatusView = self.heroStatusView {
+                if let glucose = self.deviceManager.glucoseStore.latestGlucose {
+                    let unit = self.deviceManager.displayGlucosePreference.unit
+                    let glucoseDisplay = self.deviceManager.glucoseDisplay(for: glucose)
+                    heroStatusView.setGlucoseQuantity(glucose.quantity.doubleValue(for: unit),
+                                                      at: glucose.startDate,
+                                                      unit: unit,
+                                                      staleGlucoseAge: LoopCoreConstants.inputDataRecencyInterval,
+                                                      glucoseDisplay: glucoseDisplay,
+                                                      wasUserEntered: glucose.wasUserEntered,
+                                                      isDisplayOnly: glucose.isDisplayOnly)
+                    if let trendRate = glucoseDisplay?.trendRate {
+                        heroStatusView.deltaString = self.deviceManager.displayGlucosePreference.formatMinuteRate(trendRate)
+                    } else {
+                        heroStatusView.deltaString = nil
+                    }
+                }
+
+                if let eventualGlucose = self.eventualGlucoseDescription {
+                    heroStatusView.eventualGlucoseText = String(format: NSLocalizedString("Eventually %@", comment: "The subtitle format describing eventual glucose. (1: localized glucose value description)"), eventualGlucose)
+                } else {
+                    heroStatusView.eventualGlucoseText = nil
+                }
+            }
+
             // Show/hide the table view rows
             let statusRowMode = self.determineStatusRowMode()
 
@@ -548,6 +579,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
     private enum Section: Int, CaseIterable {
         case alertWarning
+        case hero
         case hud
         case status
     }
@@ -741,10 +773,36 @@ final class StatusTableViewController: LoopChartsTableViewController {
         switch Section(rawValue: section)! {
         case .alertWarning:
             return shouldShowBannerWarning ? 1 : 0
+        case .hero:
+            return 1
         case .hud:
             return shouldShowHUD ? 1 : 0
         case .status:
             return shouldShowStatus ? StatusRow.allCases.count : 0
+        }
+    }
+
+    private class HeroStatusTableViewCell: UITableViewCell {
+        let heroView = StatusHeroView()
+
+        override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+            super.init(style: style, reuseIdentifier: reuseIdentifier)
+
+            selectionStyle = .none
+            backgroundColor = .secondarySystemBackground
+
+            heroView.translatesAutoresizingMaskIntoConstraints = false
+            contentView.addSubview(heroView)
+            NSLayoutConstraint.activate([
+                heroView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                heroView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                heroView.topAnchor.constraint(equalTo: contentView.topAnchor),
+                heroView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            ])
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
         }
     }
 
@@ -841,6 +899,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 cell.selectionStyle = .none
                 return cell
             }
+        case .hero:
+            let cell = tableView.dequeueReusableCell(withIdentifier: HeroStatusTableViewCell.className, for: indexPath) as! HeroStatusTableViewCell
+            heroStatusView = cell.heroView
+
+            return cell
         case .hud:
             let cell = tableView.dequeueReusableCell(withIdentifier: HUDViewTableViewCell.className, for: indexPath) as! HUDViewTableViewCell
             hudView = cell.hudView
@@ -976,7 +1039,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 tableView.deselectRow(at: indexPath, animated: true)
                 presentUnmuteAlertConfirmation()
             }
-        case .hud:
+        case .hero, .hud:
             break
         case .status:
             switch StatusRow(rawValue: indexPath.row)! {
@@ -1427,9 +1490,28 @@ final class StatusTableViewController: LoopChartsTableViewController {
         updatePresetModeAvailability(automaticDosingEnabled: automaticDosingEnabled)
         hudView?.loopCompletionHUD.loopIconClosed = automaticDosingEnabled
         hudView?.loopCompletionHUD.closedLoopDisallowedLocalizedDescription = deviceManager.closedLoopDisallowedLocalizedDescription
+        heroStatusView?.loopCompletionHUD.loopIconClosed = automaticDosingEnabled
+        heroStatusView?.loopCompletionHUD.closedLoopDisallowedLocalizedDescription = deviceManager.closedLoopDisallowedLocalizedDescription
     }
 
     // MARK: - HUDs
+
+    private var heroStatusView: StatusHeroView? {
+        didSet {
+            guard let heroStatusView = heroStatusView, heroStatusView != oldValue else {
+                return
+            }
+
+            heroStatusView.loopCompletionHUD.stateColors = .loopStatus
+            heroStatusView.loopCompletionHUD.loopIconClosed = automaticDosingStatus.automaticDosingEnabled
+            heroStatusView.loopCompletionHUD.closedLoopDisallowedLocalizedDescription = deviceManager.closedLoopDisallowedLocalizedDescription
+            heroStatusView.loopCompletionHUD.lastLoopCompleted = deviceManager.loopManager.lastLoopCompleted
+
+            refreshContext.update(with: .status)
+            log.debug("[reloadData] after heroStatusView loaded")
+            reloadData()
+        }
+    }
 
     @IBOutlet var hudView: StatusBarHUDView? {
         didSet {

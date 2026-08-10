@@ -7,15 +7,41 @@
 //
 
 import UIKit
+import HealthKit
+import LoopKit
 import LoopKitUI
 import LoopCore
 
 public final class LoopCompletionHUDView: BaseHUDView {
 
     @IBOutlet private weak var loopStateView: LoopStateView!
-    
+
     override public var orderPriority: HUDViewOrderPriority {
         return 2
+    }
+
+    /// Supports programmatic instantiation at arbitrary sizes (e.g. the status screen hero ring),
+    /// wiring the loop state view the nib otherwise provides. The caption label is intentionally
+    /// left nil; all caption updates are optional-chained.
+    override public init(frame: CGRect) {
+        super.init(frame: frame)
+
+        let stateView = LoopStateView(frame: bounds)
+        stateView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stateView)
+        NSLayoutConstraint.activate([
+            stateView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stateView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stateView.topAnchor.constraint(equalTo: topAnchor),
+            stateView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+        loopStateView = stateView
+
+        updateDisplay(nil)
+    }
+
+    required public init?(coder aDecoder: NSCoder) {
+        super.init(coder: aDecoder)
     }
 
     private(set) var freshness = LoopCompletionFreshness.stale {
@@ -222,5 +248,157 @@ extension LoopCompletionHUDView {
             return (title: LocalizedString("Loop Failure", comment: "Title of red loop message"),
                     message: String(format: LocalizedString("\n%1$@\n\nTap your CGM and insulin pump status icons for more information. %2$@ will continue trying to complete a loop, but check for potential communication issues with your pump and CGM.", comment: "Red loop message (1: last loop  string) (2: app name)"), lastLoopMessage, Bundle.main.bundleDisplayName))
         }
+    }
+}
+
+// MARK: - StatusHeroView
+
+/// The hero view for the main status screen: a large loop completion ring with the current
+/// glucose value, trend, unit, and delta inside it, and the eventual glucose below it.
+///
+/// The ring reuses `LoopCompletionHUDView`, so freshness and open/closed loop rendering are
+/// unchanged; the glucose display reuses `CGMStatusHUDViewModel`, so value/trend/staleness
+/// behavior matches the CGM status HUD.
+public final class StatusHeroView: UIView {
+
+    private enum LayoutConstants {
+        static let ringDiameter: CGFloat = 200
+        static let glucoseFontSize: CGFloat = 62
+        static let trendIconPointSize: CGFloat = 28
+    }
+
+    public let loopCompletionHUD = LoopCompletionHUDView(frame: CGRect(x: 0, y: 0, width: LayoutConstants.ringDiameter, height: LayoutConstants.ringDiameter))
+
+    /// A preformatted glucose delta/rate string shown beside the unit inside the ring
+    public var deltaString: String? {
+        didSet {
+            updateInfoLabel()
+        }
+    }
+
+    /// A preformatted eventual glucose string shown below the ring
+    public var eventualGlucoseText: String? {
+        didSet {
+            eventualGlucoseLabel.text = eventualGlucoseText
+        }
+    }
+
+    private lazy var viewModel = CGMStatusHUDViewModel(staleGlucoseValueHandler: { [weak self] in
+        self?.deltaString = nil
+        self?.updateGlucoseDisplay()
+    })
+
+    private let glucoseLabel: UILabel = {
+        let label = UILabel()
+        label.font = .monospacedDigitSystemFont(ofSize: LayoutConstants.glucoseFontSize, weight: .bold)
+        label.textColor = .label
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.5
+        return label
+    }()
+
+    private let trendImageView: UIImageView = {
+        let imageView = UIImageView()
+        imageView.contentMode = .scaleAspectFit
+        imageView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: LayoutConstants.trendIconPointSize, weight: .bold)
+        imageView.tintColor = .glucoseTintColor
+        return imageView
+    }()
+
+    private let infoLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 15, weight: .medium)
+        label.textColor = .secondaryLabel
+        label.textAlignment = .center
+        return label
+    }()
+
+    private let eventualGlucoseLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 15)
+        label.textColor = .secondaryLabel
+        label.textAlignment = .center
+        return label
+    }()
+
+    public override init(frame: CGRect) {
+        super.init(frame: frame)
+        setup()
+    }
+
+    public required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    private func setup() {
+        let valueStack = UIStackView(arrangedSubviews: [glucoseLabel, trendImageView])
+        valueStack.axis = .horizontal
+        valueStack.alignment = .center
+        valueStack.spacing = 4
+
+        let glucoseStack = UIStackView(arrangedSubviews: [valueStack, infoLabel])
+        glucoseStack.axis = .vertical
+        glucoseStack.alignment = .center
+        glucoseStack.spacing = 0
+
+        loopCompletionHUD.translatesAutoresizingMaskIntoConstraints = false
+        glucoseStack.translatesAutoresizingMaskIntoConstraints = false
+        eventualGlucoseLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(loopCompletionHUD)
+        addSubview(glucoseStack)
+        addSubview(eventualGlucoseLabel)
+
+        NSLayoutConstraint.activate([
+            loopCompletionHUD.widthAnchor.constraint(equalToConstant: LayoutConstants.ringDiameter),
+            loopCompletionHUD.heightAnchor.constraint(equalTo: loopCompletionHUD.widthAnchor),
+            loopCompletionHUD.centerXAnchor.constraint(equalTo: centerXAnchor),
+            loopCompletionHUD.topAnchor.constraint(equalTo: topAnchor, constant: 16),
+
+            glucoseStack.centerXAnchor.constraint(equalTo: loopCompletionHUD.centerXAnchor),
+            glucoseStack.centerYAnchor.constraint(equalTo: loopCompletionHUD.centerYAnchor),
+            glucoseStack.widthAnchor.constraint(lessThanOrEqualTo: loopCompletionHUD.widthAnchor, constant: -32),
+
+            eventualGlucoseLabel.topAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 12),
+            eventualGlucoseLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            eventualGlucoseLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 8),
+            eventualGlucoseLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16),
+        ])
+
+        updateGlucoseDisplay()
+    }
+
+    public func setGlucoseQuantity(_ glucoseQuantity: Double,
+                                   at glucoseStartDate: Date,
+                                   unit: HKUnit,
+                                   staleGlucoseAge: TimeInterval,
+                                   glucoseDisplay: GlucoseDisplayable?,
+                                   wasUserEntered: Bool,
+                                   isDisplayOnly: Bool)
+    {
+        viewModel.setGlucoseQuantity(glucoseQuantity,
+                                     at: glucoseStartDate,
+                                     unit: unit,
+                                     staleGlucoseAge: staleGlucoseAge,
+                                     glucoseDisplay: glucoseDisplay,
+                                     wasUserEntered: wasUserEntered,
+                                     isDisplayOnly: isDisplayOnly)
+        updateGlucoseDisplay()
+    }
+
+    private func updateGlucoseDisplay() {
+        glucoseLabel.text = viewModel.glucoseValueString
+        glucoseLabel.textColor = viewModel.glucoseValueTintColor
+        trendImageView.image = viewModel.glucoseTrendIcon
+        trendImageView.isHidden = viewModel.glucoseTrendIcon == nil
+        trendImageView.tintColor = viewModel.glucoseTrendTintColor
+        updateInfoLabel()
+
+        accessibilityValue = viewModel.accessibilityString
+    }
+
+    private func updateInfoLabel() {
+        infoLabel.text = [viewModel.unitsString, deltaString].compactMap { $0 }.joined(separator: " · ")
     }
 }
