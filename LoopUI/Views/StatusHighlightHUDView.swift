@@ -57,11 +57,12 @@ public class StatusHighlightHUDView: UIView, NibLoadable {
         stackView.translatesAutoresizingMaskIntoConstraints = false
         self.addSubview(stackView)
 
-        // Use AutoLayout to have the stack view fill its entire container.
+        // Center the icon and label as a group rather than stretching them across the
+        // container, so short messages don't leave a lopsided gap
         NSLayoutConstraint.activate([
             stackView.centerXAnchor.constraint(equalTo: centerXAnchor),
             stackView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            stackView.widthAnchor.constraint(equalTo: widthAnchor),
+            stackView.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor),
             stackView.heightAnchor.constraint(equalTo: heightAnchor),
         ])
     }

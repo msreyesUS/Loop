@@ -674,11 +674,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
                                                       glucoseDisplay: glucoseDisplay,
                                                       wasUserEntered: glucose.wasUserEntered,
                                                       isDisplayOnly: glucose.isDisplayOnly)
-                    if let trendRate = glucoseDisplay?.trendRate {
-                        heroStatusView.deltaString = self.deviceManager.displayGlucosePreference.formatMinuteRate(trendRate)
-                    } else {
-                        heroStatusView.deltaString = nil
-                    }
                     heroStatusView.glucoseRangeCategory = glucoseDisplay?.glucoseRangeCategory
                 } else {
                     heroStatusView.glucoseRangeCategory = nil
@@ -1766,6 +1761,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
                     progressCell.deliveredUnits = bolusProgressReporter?.progress.deliveredUnits
                     progressCell.backgroundColor = .clear
                     applyCardBackground(to: progressCell)
+                    // Inset the nib content so it clears the rounded card edges
+                    progressCell.contentView.preservesSuperviewLayoutMargins = false
+                    progressCell.contentView.layoutMargins = UIEdgeInsets(top: 8, left: 44, bottom: 8, right: 40)
                     return progressCell
                 case .cancelingBolus:
                     let cell = getTitleSubtitleCell()

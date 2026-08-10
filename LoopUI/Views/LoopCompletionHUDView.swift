@@ -273,13 +273,6 @@ public final class StatusHeroView: UIView {
 
     public let loopCompletionHUD = LoopCompletionHUDView(frame: CGRect(x: 0, y: 0, width: LayoutConstants.ringDiameter, height: LayoutConstants.ringDiameter))
 
-    /// A preformatted glucose delta/rate string shown beside the unit inside the ring
-    public var deltaString: String? {
-        didSet {
-            updateInfoLabel()
-        }
-    }
-
     /// A preformatted eventual glucose string shown below the ring
     public var eventualGlucoseText: String? {
         didSet {
@@ -308,7 +301,6 @@ public final class StatusHeroView: UIView {
     }
 
     private lazy var viewModel = CGMStatusHUDViewModel(staleGlucoseValueHandler: { [weak self] in
-        self?.deltaString = nil
         self?.glucoseRangeCategory = nil
         self?.updateGlucoseDisplay()
     })
@@ -410,9 +402,9 @@ public final class StatusHeroView: UIView {
         // The bottom constraint yields (999) rather than conflicting with the temporary
         // UIView-Encapsulated-Layout-Height constraint during table view self-sizing;
         // everything else in the vertical chain stays required so the ring keeps its size.
-        // Equal top and bottom padding keeps the ring vertically centered in the card;
-        // the eventual glucose label floats within the bottom padding.
-        let bottomConstraint = bottomAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 32)
+        // Symmetric padding: the space above the ring equals the space below the
+        // eventual glucose text.
+        let bottomConstraint = bottomAnchor.constraint(equalTo: eventualGlucoseLabel.bottomAnchor, constant: 32)
         bottomConstraint.priority = UILayoutPriority(999)
 
         NSLayoutConstraint.activate([
@@ -510,13 +502,9 @@ public final class StatusHeroView: UIView {
         trendImageView.image = viewModel.glucoseTrendIcon
         trendImageView.isHidden = viewModel.glucoseTrendIcon == nil
         trendImageView.tintColor = viewModel.glucoseTrendTintColor
-        updateInfoLabel()
+        infoLabel.text = viewModel.unitsString
 
         accessibilityValue = viewModel.accessibilityString
-    }
-
-    private func updateInfoLabel() {
-        infoLabel.text = [viewModel.unitsString, deltaString].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
