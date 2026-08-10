@@ -359,7 +359,7 @@ public final class StatusHeroView: UIView {
     private let rangeRingLayer: CAShapeLayer = {
         let layer = CAShapeLayer()
         layer.fillColor = UIColor.clear.cgColor
-        layer.lineWidth = 4
+        layer.lineWidth = 8
         return layer
     }()
 
@@ -453,7 +453,7 @@ public final class StatusHeroView: UIView {
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        rangeRingLayer.path = UIBezierPath(ovalIn: loopCompletionHUD.frame.insetBy(dx: 2, dy: 2)).cgPath
+        rangeRingLayer.path = UIBezierPath(ovalIn: loopCompletionHUD.frame.insetBy(dx: 4, dy: 4)).cgPath
         rangeRingLayer.strokeColor = rangeRingColor.resolvedColor(with: traitCollection).cgColor
         CATransaction.commit()
     }
