@@ -1003,7 +1003,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
     /// partially transparent so the background gradient shows through
     private static func makeCardView(cornerRadius: CGFloat = 20) -> UIView {
         let card = UIView()
-        card.backgroundColor = .systemBackground.withAlphaComponent(0.4)
+        card.backgroundColor = .systemBackground.withAlphaComponent(0.5)
         card.layer.cornerRadius = cornerRadius
         card.layer.cornerCurve = .continuous
         card.translatesAutoresizingMaskIntoConstraints = false
@@ -1461,7 +1461,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         let suspendButton: UIButton
         let settingsButton: UIButton
 
-        private let glassContainer: UIVisualEffectView
+        private let capsuleContainer = StatusTableViewController.makeCardView()
 
         private static func makeButton(title: String, image: UIImage?, color: UIColor) -> UIButton {
             var config = UIButton.Configuration.plain()
@@ -1490,18 +1490,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
                                              image: UIImage(systemName: "gearshape"),
                                              color: itemColor)
 
-            // One continuous floating glass capsule containing all three items, like the
-            // system tab bar: a single large glass surface reads as Liquid Glass far more
-            // strongly than separate small tiles
-            let effect: UIVisualEffect
-            if #available(iOS 26.0, *) {
-                // The clear variant is more translucent than regular glass
-                effect = UIGlassEffect(style: .clear)
-            } else {
-                effect = UIBlurEffect(style: .systemUltraThinMaterial)
-            }
-            glassContainer = UIVisualEffectView(effect: effect)
-
             super.init(style: style, reuseIdentifier: reuseIdentifier)
 
             selectionStyle = .none
@@ -1516,23 +1504,23 @@ final class StatusTableViewController: LoopChartsTableViewController {
             stack.distribution = .fillEqually
             stack.translatesAutoresizingMaskIntoConstraints = false
 
-            glassContainer.clipsToBounds = true
-            glassContainer.contentView.addSubview(stack)
-            glassContainer.translatesAutoresizingMaskIntoConstraints = false
+            // One continuous floating capsule containing all three items, using the same
+            // translucent card material as the rest of the screen
+            capsuleContainer.addSubview(stack)
 
-            contentView.addSubview(glassContainer)
-            let bottomConstraint = glassContainer.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10)
+            contentView.addSubview(capsuleContainer)
+            let bottomConstraint = capsuleContainer.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10)
             bottomConstraint.priority = UILayoutPriority(999)
             NSLayoutConstraint.activate([
-                stack.leadingAnchor.constraint(equalTo: glassContainer.contentView.leadingAnchor),
-                stack.trailingAnchor.constraint(equalTo: glassContainer.contentView.trailingAnchor),
-                stack.topAnchor.constraint(equalTo: glassContainer.contentView.topAnchor),
-                stack.bottomAnchor.constraint(equalTo: glassContainer.contentView.bottomAnchor),
+                stack.leadingAnchor.constraint(equalTo: capsuleContainer.leadingAnchor),
+                stack.trailingAnchor.constraint(equalTo: capsuleContainer.trailingAnchor),
+                stack.topAnchor.constraint(equalTo: capsuleContainer.topAnchor),
+                stack.bottomAnchor.constraint(equalTo: capsuleContainer.bottomAnchor),
 
-                glassContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
-                glassContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
-                glassContainer.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
-                glassContainer.heightAnchor.constraint(equalToConstant: 64),
+                capsuleContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
+                capsuleContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
+                capsuleContainer.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
+                capsuleContainer.heightAnchor.constraint(equalToConstant: 64),
                 bottomConstraint,
             ])
         }
@@ -1540,7 +1528,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         override func layoutSubviews() {
             super.layoutSubviews()
 
-            glassContainer.layer.cornerRadius = glassContainer.bounds.height / 2
+            capsuleContainer.layer.cornerRadius = capsuleContainer.bounds.height / 2
         }
 
         required init?(coder: NSCoder) {
@@ -1679,6 +1667,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
         case .hud:
             let cell = tableView.dequeueReusableCell(withIdentifier: HUDViewTableViewCell.className, for: indexPath) as! HUDViewTableViewCell
             cell.backgroundColor = .clear
+            // The HUD bar sets an opaque background at setup; the pills inside provide
+            // their own contrast, so let the screen gradient show behind them
+            cell.hudView.backgroundColor = .clear
             hudView = cell.hudView
 
             return cell
