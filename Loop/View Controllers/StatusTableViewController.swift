@@ -635,9 +635,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
     private enum Section: Int, CaseIterable {
         case alertWarning
+        case hud
         case hero
         case stats
-        case hud
         case status
         case actions
     }
@@ -1043,16 +1043,26 @@ final class StatusTableViewController: LoopChartsTableViewController {
         let presetButton: UIButton
 
         private static func makeButton(title: String, image: UIImage?, color: UIColor) -> UIButton {
-            var config = UIButton.Configuration.tinted()
-            config.title = title
+            var config: UIButton.Configuration
+            if #available(iOS 26.0, *) {
+                config = .prominentGlass()
+            } else {
+                config = .filled()
+            }
+            var attributedTitle = AttributedString(title)
+            attributedTitle.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
+            config.attributedTitle = attributedTitle
             config.image = image
             config.imagePlacement = .top
-            config.imagePadding = 6
+            config.imagePadding = 10
             config.cornerStyle = .large
-            config.baseForegroundColor = color
+            config.baseForegroundColor = .white
             config.baseBackgroundColor = color
-            config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 4, bottom: 12, trailing: 4)
-            return UIButton(configuration: config)
+            config.contentInsets = NSDirectionalEdgeInsets(top: 20, leading: 8, bottom: 20, trailing: 8)
+            let button = UIButton(configuration: config)
+            button.tintColor = color
+            button.heightAnchor.constraint(greaterThanOrEqualToConstant: 96).isActive = true
+            return button
         }
 
         override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
@@ -1111,28 +1121,33 @@ final class StatusTableViewController: LoopChartsTableViewController {
         let settingsButton: UIButton
 
         private static func makeButton(title: String, image: UIImage?, color: UIColor) -> UIButton {
-            var config = UIButton.Configuration.plain()
+            var config: UIButton.Configuration
+            if #available(iOS 26.0, *) {
+                config = .glass()
+            } else {
+                config = .gray()
+            }
             var attributedTitle = AttributedString(title)
-            attributedTitle.font = UIFont.systemFont(ofSize: 13)
+            attributedTitle.font = UIFont.systemFont(ofSize: 16, weight: .medium)
             config.attributedTitle = attributedTitle
             config.image = image
-            config.imagePlacement = .top
-            config.imagePadding = 4
+            config.imagePlacement = .leading
+            config.imagePadding = 6
             config.baseForegroundColor = color
-            config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 4, bottom: 8, trailing: 4)
+            config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 4, bottom: 12, trailing: 4)
             return UIButton(configuration: config)
         }
 
         override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
             preMealButton = Self.makeButton(title: NSLocalizedString("Pre-Meal", comment: "The label of the pre-meal action button"),
                                             image: UIImage.preMealImage(selected: false),
-                                            color: .carbTintColor)
+                                            color: .label)
             suspendButton = Self.makeButton(title: NSLocalizedString("Suspend", comment: "The label of the suspend insulin delivery action button"),
                                             image: UIImage(systemName: "pause.circle"),
-                                            color: .secondaryLabel)
+                                            color: .critical)
             settingsButton = Self.makeButton(title: NSLocalizedString("Settings", comment: "The label of the settings action button"),
                                              image: UIImage(named: "settings"),
-                                             color: .secondaryLabel)
+                                             color: .label)
 
             super.init(style: style, reuseIdentifier: reuseIdentifier)
 
@@ -1146,6 +1161,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             let stack = UIStackView(arrangedSubviews: [preMealButton, suspendButton, settingsButton])
             stack.axis = .horizontal
             stack.distribution = .fillEqually
+            stack.spacing = 8
             stack.translatesAutoresizingMaskIntoConstraints = false
 
             contentView.addSubview(stack)
@@ -1165,6 +1181,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
         func setPreMeal(selected: Bool, enabled: Bool) {
             preMealButton.configuration?.image = UIImage.preMealImage(selected: selected)
+            preMealButton.configuration?.baseForegroundColor = selected ? .carbTintColor : .label
             preMealButton.isEnabled = enabled
             if selected {
                 preMealButton.accessibilityTraits.insert(.selected)
@@ -1425,6 +1442,48 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 return cell
             }
         }
+    }
+
+    // MARK: - Bottom-aligned actions
+
+    /// Height of an invisible footer placed before the actions section so the action buttons
+    /// sit along the bottom of the screen when the content is shorter than the table.
+    private var actionsBottomSpacerHeight: CGFloat = 0
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+
+        updateActionsBottomSpacer()
+    }
+
+    private func updateActionsBottomSpacer() {
+        let contentHeight = tableView.contentSize.height - actionsBottomSpacerHeight
+        let availableHeight = tableView.bounds.height - tableView.adjustedContentInset.top - tableView.adjustedContentInset.bottom
+        let newHeight = max(0, availableHeight - contentHeight)
+
+        if abs(newHeight - actionsBottomSpacerHeight) > 1 {
+            actionsBottomSpacerHeight = newHeight
+            UIView.performWithoutAnimation {
+                tableView.beginUpdates()
+                tableView.endUpdates()
+            }
+        }
+    }
+
+    override func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
+        guard Section(rawValue: section) == .status else {
+            return 0
+        }
+        return actionsBottomSpacerHeight
+    }
+
+    override func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
+        guard Section(rawValue: section) == .status else {
+            return nil
+        }
+        let spacer = UIView()
+        spacer.backgroundColor = .clear
+        return spacer
     }
 
     // MARK: - UITableViewDelegate
