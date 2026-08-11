@@ -354,18 +354,15 @@ public final class StatusHeroView: UIView {
         static let bulgeHalfSpan: CGFloat = 0.62
     }
 
-    /// The hollow slate triangle inside the trend bulge
+    /// The solid slate triangle inside the trend bulge
     private let trendArrowLayer: CAShapeLayer = {
         let layer = CAShapeLayer()
         let path = UIBezierPath()
-        path.move(to: CGPoint(x: -9, y: -20))
-        path.addLine(to: CGPoint(x: -9, y: 20))
-        path.addLine(to: CGPoint(x: 35, y: 0))
+        path.move(to: CGPoint(x: -9, y: -18))
+        path.addLine(to: CGPoint(x: -9, y: 18))
+        path.addLine(to: CGPoint(x: 32, y: 0))
         path.close()
         layer.path = path.cgPath
-        layer.fillColor = UIColor.clear.cgColor
-        layer.lineWidth = 3.5
-        layer.lineJoin = .round
         layer.isHidden = true
         return layer
     }()
@@ -496,28 +493,50 @@ public final class StatusHeroView: UIView {
             CGPoint(x: center.x + cos(angle) * radius, y: center.y + sin(angle) * radius)
         }
 
+        let slate = (UIColor(named: "primaryButton1") ?? .label).resolvedColor(with: traitCollection)
+
         let ringPath = UIBezierPath()
         if let trendAngle = trendArrowAngle {
             // The outer contour follows the circle, then flows out to a point at the
-            // trend angle and back, like a droplet
+            // trend angle and back. The curves leave the circle exactly along its
+            // tangents and approach the tip symmetrically, so the blend is smooth.
             let bulgeAngle = -trendAngle
             let halfSpan = RingConstants.bulgeHalfSpan
-            let tipRadius = outerRadius + RingConstants.bulgeLength
-            let controlRadius = outerRadius + RingConstants.bulgeLength * 0.42
+            let tip = polar(bulgeAngle, outerRadius + RingConstants.bulgeLength)
+            let bPoint = polar(bulgeAngle - halfSpan, outerRadius)
+            let aPoint = polar(bulgeAngle + halfSpan, outerRadius)
+
+            let outward = CGPoint(x: cos(bulgeAngle), y: sin(bulgeAngle))
+            // Circle tangents at the junctions, pointing toward the bulge
+            let tangentB = CGPoint(x: -sin(bulgeAngle - halfSpan), y: cos(bulgeAngle - halfSpan))
+            let tangentA = CGPoint(x: sin(bulgeAngle + halfSpan), y: -cos(bulgeAngle + halfSpan))
+
+            func rotated(_ v: CGPoint, by angle: CGFloat) -> CGPoint {
+                CGPoint(x: v.x * cos(angle) - v.y * sin(angle), y: v.x * sin(angle) + v.y * cos(angle))
+            }
+            func offset(_ p: CGPoint, along v: CGPoint, by distance: CGFloat) -> CGPoint {
+                CGPoint(x: p.x + v.x * distance, y: p.y + v.y * distance)
+            }
+
+            let tangentReach = outerRadius * halfSpan * 0.55
+            let tipReach = RingConstants.bulgeLength * 0.5
+            let tipHalfAngle: CGFloat = 0.42
 
             ringPath.addArc(withCenter: center, radius: outerRadius,
                             startAngle: bulgeAngle + halfSpan, endAngle: bulgeAngle - halfSpan,
                             clockwise: true)
-            ringPath.addQuadCurve(to: polar(bulgeAngle, tipRadius),
-                                  controlPoint: polar(bulgeAngle - halfSpan * 0.32, controlRadius))
-            ringPath.addQuadCurve(to: polar(bulgeAngle + halfSpan, outerRadius),
-                                  controlPoint: polar(bulgeAngle + halfSpan * 0.32, controlRadius))
+            ringPath.addCurve(to: tip,
+                              controlPoint1: offset(bPoint, along: tangentB, by: tangentReach),
+                              controlPoint2: offset(tip, along: rotated(outward, by: tipHalfAngle), by: -tipReach))
+            ringPath.addCurve(to: aPoint,
+                              controlPoint1: offset(tip, along: rotated(outward, by: -tipHalfAngle), by: -tipReach),
+                              controlPoint2: offset(aPoint, along: tangentA, by: tangentReach))
             ringPath.close()
 
-            // Base stays against the ring's outer edge; the hollow tip reaches into the bulge
+            // Solid slate arrow, base against the ring's outer edge
             trendArrowLayer.position = polar(bulgeAngle, outerRadius + 7)
             trendArrowLayer.setAffineTransform(CGAffineTransform(rotationAngle: bulgeAngle))
-            trendArrowLayer.strokeColor = (UIColor(named: "primaryButton1") ?? .label).resolvedColor(with: traitCollection).cgColor
+            trendArrowLayer.fillColor = slate.cgColor
             trendArrowLayer.isHidden = false
         } else {
             ringPath.addArc(withCenter: center, radius: outerRadius,
@@ -531,6 +550,10 @@ public final class StatusHeroView: UIView {
 
         rangeRingLayer.path = ringPath.cgPath
         rangeRingLayer.fillColor = rangeRingColor.resolvedColor(with: traitCollection).cgColor
+        // Thin slate outline tracing both the outer contour (including the bulge)
+        // and the inner edge
+        rangeRingLayer.strokeColor = slate.cgColor
+        rangeRingLayer.lineWidth = 1.5
 
         CATransaction.commit()
     }
