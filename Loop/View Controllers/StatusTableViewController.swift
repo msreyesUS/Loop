@@ -333,13 +333,39 @@ final class StatusTableViewController: LoopChartsTableViewController {
         cell.carbsButton.isEnabled = isPumpOnboarded
         cell.presetButton.isEnabled = workoutModeAllowed
 
-        // While a preset is active, the Preset button shifts to the purple accent
+        // While a preset is active, the button reads pressed-in: a border in the
+        // button's blue around a lighter fill, with the content in the blue
         let presetActive = workoutMode == true
-        let presetColor = presetActive
-            ? (UIColor(named: "purpleAccent") ?? .systemPurple)
-            : (UIColor(named: "infoAccent") ?? .systemBlue)
-        cell.presetButton.configuration?.baseBackgroundColor = presetColor
+        let presetColor = UIColor(named: "infoAccent") ?? .systemBlue
+        if var config = cell.presetButton.configuration {
+            if presetActive {
+                config.baseBackgroundColor = Self.blend(presetColor, with: .systemBackground, fraction: 0.75)
+                config.baseForegroundColor = presetColor
+                config.background.strokeColor = presetColor
+                config.background.strokeWidth = 2.5
+            } else {
+                config.baseBackgroundColor = presetColor
+                config.baseForegroundColor = .white
+                config.background.strokeColor = nil
+                config.background.strokeWidth = 0
+            }
+            cell.presetButton.configuration = config
+        }
         cell.presetButton.tintColor = presetColor
+    }
+
+    /// Blends two colors, resolving dynamic colors for the current appearance
+    private static func blend(_ color: UIColor, with other: UIColor, fraction: CGFloat) -> UIColor {
+        UIColor { traits in
+            var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+            var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+            color.resolvedColor(with: traits).getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+            other.resolvedColor(with: traits).getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+            return UIColor(red: r1 + (r2 - r1) * fraction,
+                           green: g1 + (g2 - g1) * fraction,
+                           blue: b1 + (b2 - b1) * fraction,
+                           alpha: 1)
+        }
     }
 
     private func configureSecondaryActionsCell(_ cell: SecondaryActionsTableViewCell) {
@@ -1536,14 +1562,14 @@ final class StatusTableViewController: LoopChartsTableViewController {
             config.attributedTitle = attributedTitle
             config.image = image?.withRenderingMode(.alwaysTemplate)
             config.imagePlacement = .top
-            config.imagePadding = 10
+            config.imagePadding = 5
             config.cornerStyle = .large
             config.baseForegroundColor = .white
             config.baseBackgroundColor = color
-            config.contentInsets = NSDirectionalEdgeInsets(top: 20, leading: 8, bottom: 20, trailing: 8)
+            config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 8, bottom: 10, trailing: 8)
             let button = UIButton(configuration: config)
             button.tintColor = color
-            button.heightAnchor.constraint(greaterThanOrEqualToConstant: 96).isActive = true
+            button.heightAnchor.constraint(greaterThanOrEqualToConstant: 64).isActive = true
             return button
         }
 
