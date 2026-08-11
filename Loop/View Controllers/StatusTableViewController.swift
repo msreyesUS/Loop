@@ -974,6 +974,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
         background.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.62)
         background.cornerRadius = 14
         background.backgroundInsets = NSDirectionalEdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
+        background.strokeColor = .separator
+        background.strokeWidth = 1
         cell.backgroundConfiguration = background
     }
 
@@ -1182,15 +1184,37 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
     }
 
+    /// A rounded, translucent card with a hairline border so it reads against the
+    /// equally subtle background gradient
+    private final class CardView: UIView {
+        init(cornerRadius: CGFloat) {
+            super.init(frame: .zero)
+            backgroundColor = .systemBackground.withAlphaComponent(0.62)
+            layer.cornerRadius = cornerRadius
+            layer.cornerCurve = .continuous
+            layer.borderWidth = 1
+            translatesAutoresizingMaskIntoConstraints = false
+            updateBorderColor()
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+            super.traitCollectionDidChange(previousTraitCollection)
+            updateBorderColor()
+        }
+
+        private func updateBorderColor() {
+            layer.borderColor = UIColor.separator.resolvedColor(with: traitCollection).cgColor
+        }
+    }
+
     /// A rounded, translucent card container used by the redesigned status cells;
     /// partially transparent so the background gradient shows through
     private static func makeCardView(cornerRadius: CGFloat = 20) -> UIView {
-        let card = UIView()
-        card.backgroundColor = .systemBackground.withAlphaComponent(0.62)
-        card.layer.cornerRadius = cornerRadius
-        card.layer.cornerCurve = .continuous
-        card.translatesAutoresizingMaskIntoConstraints = false
-        return card
+        return CardView(cornerRadius: cornerRadius)
     }
 
     private class HeroStatusTableViewCell: UITableViewCell {

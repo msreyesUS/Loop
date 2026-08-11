@@ -39,10 +39,19 @@ import LoopKitUI
     
     @IBOutlet private weak var backgroundView: UIView! {
         didSet {
-            // Translucent to match the status screen's card material
+            // Translucent with a hairline border to match the status screen's cards
             backgroundView.backgroundColor = .systemBackground.withAlphaComponent(0.62)
             backgroundView.layer.cornerRadius = 23
+            backgroundView.layer.borderWidth = 1
+            backgroundView.layer.borderColor = UIColor.separator.cgColor
         }
+    }
+
+    open override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+
+        // CGColors don't adapt automatically; re-resolve for the new appearance
+        backgroundView?.layer.borderColor = UIColor.separator.resolvedColor(with: traitCollection).cgColor
     }
     
     @IBOutlet weak var statusStackView: UIStackView!
