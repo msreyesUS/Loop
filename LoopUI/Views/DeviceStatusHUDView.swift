@@ -25,7 +25,7 @@ import LoopKitUI
         }
     }
     
-    @IBOutlet private weak var progressView: UIProgressView! {
+    @IBOutlet weak var progressView: UIProgressView! {
         didSet {
             progressView.isHidden = true
             progressView.tintColor = .systemGray

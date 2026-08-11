@@ -28,11 +28,12 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
         }
     }
 
-    /// A small label shown alongside the pump manager's HUD (e.g. pod expiration)
+    /// A small label shown alongside the pump manager's HUD (e.g. pod expiration),
+    /// styled to match the status highlight message
     public let expirationLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 15, weight: .medium)
-        label.textColor = .secondaryLabel
+        label.font = .systemFont(ofSize: 16, weight: .medium)
+        label.textColor = .label
         label.numberOfLines = 2
         label.textAlignment = .center
         label.adjustsFontSizeToFitWidth = true

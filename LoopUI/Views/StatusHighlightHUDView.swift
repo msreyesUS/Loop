@@ -33,12 +33,12 @@ public class StatusHighlightHUDView: UIView, NibLoadable {
             case .left:
                 stackView.addArrangedSubview(icon)
                 stackView.addArrangedSubview(messageLabel)
-                messageLabel.textAlignment = .left
             case .right:
                 stackView.addArrangedSubview(messageLabel)
                 stackView.addArrangedSubview(icon)
-                messageLabel.textAlignment = .right
             }
+            // The message centers within the space beside the icon
+            messageLabel.textAlignment = .center
         }
     }
     
@@ -57,15 +57,17 @@ public class StatusHighlightHUDView: UIView, NibLoadable {
         stackView.translatesAutoresizingMaskIntoConstraints = false
         self.addSubview(stackView)
 
-        // Lighter weight to match the status screen's card titles
+        // Lighter weight to match the status screen's card titles; centered so the
+        // text sits midway between the container edge and the icon
         messageLabel.font = .systemFont(ofSize: 16, weight: .medium)
+        messageLabel.textAlignment = .center
 
-        // Center the icon and label as a group rather than stretching them across the
-        // container, so short messages don't leave a lopsided gap
+        // The stack fills the container; the centered message label stretches to
+        // occupy the space beside the icon, so its text centers within that space
         NSLayoutConstraint.activate([
             stackView.centerXAnchor.constraint(equalTo: centerXAnchor),
             stackView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            stackView.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor),
+            stackView.widthAnchor.constraint(equalTo: widthAnchor),
             stackView.heightAnchor.constraint(equalTo: heightAnchor),
         ])
     }

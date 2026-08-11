@@ -51,6 +51,14 @@ public final class CGMStatusHUDView: DeviceStatusHUDView, NibLoadable {
             self?.updateDisplay()
         })
     }
+
+    override public func awakeFromNib() {
+        super.awakeFromNib()
+
+        // Mirror the lifecycle bar so it fills toward the pill's outer (leading) edge,
+        // the reverse of the pump pill's bar
+        progressView.transform = CGAffineTransform(scaleX: -1, y: 1)
+    }
     
     override public func tintColorDidChange() {
         super.tintColorDidChange()
