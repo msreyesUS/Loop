@@ -349,20 +349,23 @@ public final class StatusHeroView: UIView {
     /// The ring's stroke thickness and the trend bulge geometry
     private enum RingConstants {
         static let thickness: CGFloat = 12
-        static let bulgeLength: CGFloat = 24
+        static let bulgeLength: CGFloat = 48
         /// Half-span of the bulge along the circle, in radians
-        static let bulgeHalfSpan: CGFloat = 0.5
+        static let bulgeHalfSpan: CGFloat = 0.62
     }
 
-    /// The slate triangle inside the trend bulge
+    /// The hollow slate triangle inside the trend bulge
     private let trendArrowLayer: CAShapeLayer = {
         let layer = CAShapeLayer()
         let path = UIBezierPath()
-        path.move(to: CGPoint(x: -9, y: -10))
-        path.addLine(to: CGPoint(x: -9, y: 10))
-        path.addLine(to: CGPoint(x: 15, y: 0))
+        path.move(to: CGPoint(x: -9, y: -20))
+        path.addLine(to: CGPoint(x: -9, y: 20))
+        path.addLine(to: CGPoint(x: 35, y: 0))
         path.close()
         layer.path = path.cgPath
+        layer.fillColor = UIColor.clear.cgColor
+        layer.lineWidth = 3.5
+        layer.lineJoin = .round
         layer.isHidden = true
         return layer
     }()
@@ -443,7 +446,8 @@ public final class StatusHeroView: UIView {
             loopCompletionHUD.widthAnchor.constraint(equalToConstant: LayoutConstants.ringDiameter),
             loopCompletionHUD.heightAnchor.constraint(equalTo: loopCompletionHUD.widthAnchor),
             loopCompletionHUD.centerXAnchor.constraint(equalTo: centerXAnchor),
-            loopCompletionHUD.topAnchor.constraint(equalTo: topAnchor, constant: 32),
+            // Clearance for the trend bulge pointing straight up
+            loopCompletionHUD.topAnchor.constraint(equalTo: topAnchor, constant: 56),
 
             // The title sits inside the ring, spaced evenly above the glucose value just
             // as the unit line is below it. The overlap constants compensate for the
@@ -462,8 +466,8 @@ public final class StatusHeroView: UIView {
             infoStack.widthAnchor.constraint(lessThanOrEqualTo: loopCompletionHUD.widthAnchor, constant: -36),
 
             // Enough clearance below the ring that a downward trend arrow can't touch the text
-            // Clearance for the bold downward trend arrow
-            eventualGlucoseLabel.topAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 28),
+            // Clearance for the trend bulge pointing straight down
+            eventualGlucoseLabel.topAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 56),
             eventualGlucoseLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
             eventualGlucoseLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 8),
             bottomConstraint,
@@ -510,9 +514,10 @@ public final class StatusHeroView: UIView {
                                   controlPoint: polar(bulgeAngle + halfSpan * 0.32, controlRadius))
             ringPath.close()
 
-            trendArrowLayer.position = polar(bulgeAngle, outerRadius + RingConstants.bulgeLength * 0.3)
+            // Base stays against the ring's outer edge; the hollow tip reaches into the bulge
+            trendArrowLayer.position = polar(bulgeAngle, outerRadius + 7)
             trendArrowLayer.setAffineTransform(CGAffineTransform(rotationAngle: bulgeAngle))
-            trendArrowLayer.fillColor = (UIColor(named: "primaryButton1") ?? .label).resolvedColor(with: traitCollection).cgColor
+            trendArrowLayer.strokeColor = (UIColor(named: "primaryButton1") ?? .label).resolvedColor(with: traitCollection).cgColor
             trendArrowLayer.isHidden = false
         } else {
             ringPath.addArc(withCenter: center, radius: outerRadius,
