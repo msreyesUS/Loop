@@ -348,21 +348,20 @@ public final class StatusHeroView: UIView {
 
     /// The ring's stroke thickness and the trend bulge geometry
     private enum RingConstants {
-        static let thickness: CGFloat = 12
+        static let thickness: CGFloat = 16
         static let bulgeLength: CGFloat = 48
         /// Half-span of the bulge along the circle, in radians
         static let bulgeHalfSpan: CGFloat = 0.62
+        /// Half-angle of the bulge's point, in radians
+        static let tipHalfAngle: CGFloat = 0.42
+        /// The ring-colored margin between the bulge contour and the arrow
+        static let arrowMargin: CGFloat = 6.5
     }
 
-    /// The solid slate triangle inside the trend bulge
+    /// The solid slate triangle inside the trend bulge; its path is derived from the
+    /// bulge geometry in layoutSubviews so the margin around it stays constant
     private let trendArrowLayer: CAShapeLayer = {
         let layer = CAShapeLayer()
-        let path = UIBezierPath()
-        path.move(to: CGPoint(x: -9, y: -18))
-        path.addLine(to: CGPoint(x: -9, y: 18))
-        path.addLine(to: CGPoint(x: 32, y: 0))
-        path.close()
-        layer.path = path.cgPath
         layer.isHidden = true
         return layer
     }()
@@ -520,7 +519,7 @@ public final class StatusHeroView: UIView {
 
             let tangentReach = outerRadius * halfSpan * 0.55
             let tipReach = RingConstants.bulgeLength * 0.5
-            let tipHalfAngle: CGFloat = 0.42
+            let tipHalfAngle = RingConstants.tipHalfAngle
 
             ringPath.addArc(withCenter: center, radius: outerRadius,
                             startAngle: bulgeAngle + halfSpan, endAngle: bulgeAngle - halfSpan,
@@ -533,8 +532,19 @@ public final class StatusHeroView: UIView {
                               controlPoint2: offset(aPoint, along: tangentA, by: tangentReach))
             ringPath.close()
 
-            // Solid slate arrow, base against the ring's outer edge
-            trendArrowLayer.position = polar(bulgeAngle, outerRadius + 7)
+            // Solid slate arrow with the same apex angle as the bulge walls, inset by a
+            // constant perpendicular margin so the ring-colored border around it is
+            // uniform from base to tip
+            let apexX = RingConstants.bulgeLength - RingConstants.arrowMargin / sin(tipHalfAngle)
+            let baseX: CGFloat = -2
+            let halfHeight = (apexX - baseX) * tan(tipHalfAngle)
+            let arrowPath = UIBezierPath()
+            arrowPath.move(to: CGPoint(x: baseX, y: -halfHeight))
+            arrowPath.addLine(to: CGPoint(x: baseX, y: halfHeight))
+            arrowPath.addLine(to: CGPoint(x: apexX, y: 0))
+            arrowPath.close()
+            trendArrowLayer.path = arrowPath.cgPath
+            trendArrowLayer.position = polar(bulgeAngle, outerRadius)
             trendArrowLayer.setAffineTransform(CGAffineTransform(rotationAngle: bulgeAngle))
             trendArrowLayer.fillColor = slate.cgColor
             trendArrowLayer.isHidden = false
@@ -550,9 +560,10 @@ public final class StatusHeroView: UIView {
 
         rangeRingLayer.path = ringPath.cgPath
         rangeRingLayer.fillColor = rangeRingColor.resolvedColor(with: traitCollection).cgColor
-        // Thin slate outline tracing both the outer contour (including the bulge)
-        // and the inner edge
-        rangeRingLayer.strokeColor = slate.cgColor
+        // Thin outline tracing both the outer contour (including the bulge) and the
+        // inner edge, in the same softened separator color the cards use
+        let resolvedSeparator = UIColor.separator.resolvedColor(with: traitCollection)
+        rangeRingLayer.strokeColor = resolvedSeparator.withAlphaComponent(resolvedSeparator.cgColor.alpha * 0.8).cgColor
         rangeRingLayer.lineWidth = 1.5
 
         CATransaction.commit()
