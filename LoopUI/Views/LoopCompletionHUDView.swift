@@ -268,7 +268,6 @@ public final class StatusHeroView: UIView {
     private enum LayoutConstants {
         static let ringDiameter: CGFloat = 192
         static let glucoseFontSize: CGFloat = 92
-        static let trendIconPointSize: CGFloat = 20
     }
 
     public let loopCompletionHUD = LoopCompletionHUDView(frame: CGRect(x: 0, y: 0, width: LayoutConstants.ringDiameter, height: LayoutConstants.ringDiameter))
@@ -314,14 +313,6 @@ public final class StatusHeroView: UIView {
         return label
     }()
 
-    private let trendImageView: UIImageView = {
-        let imageView = UIImageView()
-        imageView.contentMode = .scaleAspectFit
-        imageView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: LayoutConstants.trendIconPointSize, weight: .bold)
-        imageView.tintColor = .glucoseTintColor
-        return imageView
-    }()
-
     private let infoLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 15, weight: .medium)
@@ -355,11 +346,43 @@ public final class StatusHeroView: UIView {
         return layer
     }()
 
+    /// A triangular trend arrow riding the ring, pointing outward at the angle of the
+    /// glucose trend (flat at 3 o'clock, rising on the upper arc, falling on the lower)
+    private let trendArrowLayer: CAShapeLayer = {
+        let layer = CAShapeLayer()
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: -9, y: -11))
+        path.addLine(to: CGPoint(x: -9, y: 11))
+        path.addLine(to: CGPoint(x: 13, y: 0))
+        path.close()
+        layer.path = path.cgPath
+        layer.isHidden = true
+        return layer
+    }()
+
     private var rangeRingColor: UIColor {
         guard let category = glucoseRangeCategory else {
             return UIColor.tertiaryLabel.withAlphaComponent(0.3)
         }
         return category.backgroundGradientColor.withAlphaComponent(0.95)
+    }
+
+    private var trendArrowAngle: CGFloat? {
+        // Radians, 0 at 3 o'clock, positive rising
+        switch viewModel.trend {
+        case .flat:
+            return 0
+        case .up:
+            return .pi / 4
+        case .upUp, .upUpUp:
+            return .pi / 2
+        case .down:
+            return -.pi / 4
+        case .downDown, .downDownDown:
+            return -.pi / 2
+        case .none:
+            return nil
+        }
     }
 
 
@@ -380,12 +403,14 @@ public final class StatusHeroView: UIView {
         loopCompletionHUD.isHidden = true
 
         // Trend arrow and unit/delta sit together on a line below the glucose value
-        let infoStack = UIStackView(arrangedSubviews: [trendImageView, infoLabel])
+        // The trend is shown by the arrow riding the ring; the info line carries the unit
+        let infoStack = UIStackView(arrangedSubviews: [infoLabel])
         infoStack.axis = .horizontal
         infoStack.alignment = .center
         infoStack.spacing = 4
 
         layer.addSublayer(rangeRingLayer)
+        layer.addSublayer(trendArrowLayer)
 
         loopCompletionHUD.translatesAutoresizingMaskIntoConstraints = false
         glucoseLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -429,7 +454,8 @@ public final class StatusHeroView: UIView {
             infoStack.topAnchor.constraint(equalTo: glucoseLabel.bottomAnchor, constant: -16),
             infoStack.widthAnchor.constraint(lessThanOrEqualTo: loopCompletionHUD.widthAnchor, constant: -36),
 
-            eventualGlucoseLabel.topAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 7),
+            // Enough clearance below the ring that a downward trend arrow can't touch the text
+            eventualGlucoseLabel.topAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 16),
             eventualGlucoseLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
             eventualGlucoseLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 8),
             bottomConstraint,
@@ -449,6 +475,20 @@ public final class StatusHeroView: UIView {
         CATransaction.setDisableActions(true)
         rangeRingLayer.path = UIBezierPath(ovalIn: loopCompletionHUD.frame.insetBy(dx: 6, dy: 6)).cgPath
         rangeRingLayer.strokeColor = rangeRingColor.resolvedColor(with: traitCollection).cgColor
+
+        if let angle = trendArrowAngle {
+            // Ride the ring's stroke: position on the circle at the trend angle,
+            // rotated so the triangle points outward
+            let ringFrame = loopCompletionHUD.frame
+            let radius = ringFrame.width / 2 - 6
+            trendArrowLayer.position = CGPoint(x: ringFrame.midX + cos(angle) * radius,
+                                               y: ringFrame.midY - sin(angle) * radius)
+            trendArrowLayer.setAffineTransform(CGAffineTransform(rotationAngle: -angle))
+            trendArrowLayer.fillColor = (glucoseRangeCategory?.backgroundGradientColor ?? .tertiaryLabel).resolvedColor(with: traitCollection).cgColor
+            trendArrowLayer.isHidden = false
+        } else {
+            trendArrowLayer.isHidden = true
+        }
         CATransaction.commit()
     }
 
@@ -499,10 +539,10 @@ public final class StatusHeroView: UIView {
             glucoseLabel.text = viewModel.glucoseValueString
             glucoseLabel.textColor = viewModel.glucoseValueTintColor
         }
-        trendImageView.image = viewModel.glucoseTrendIcon
-        trendImageView.isHidden = viewModel.glucoseTrendIcon == nil
-        trendImageView.tintColor = viewModel.glucoseTrendTintColor
         infoLabel.text = viewModel.unitsString
+
+        // Reposition the ring's trend arrow for the new trend
+        setNeedsLayout()
 
         accessibilityValue = viewModel.accessibilityString
     }
