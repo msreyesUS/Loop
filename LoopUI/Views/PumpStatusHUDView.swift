@@ -41,6 +41,8 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
         label.isHidden = true
         // Stretch to fill the space next to the pump HUD so the text centers within it
         label.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        // Optical centering: nudged slightly trailing within its space
+        label.transform = CGAffineTransform(translationX: 5, y: 0)
         return label
     }()
 
