@@ -974,7 +974,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         background.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.62)
         background.cornerRadius = 14
         background.backgroundInsets = NSDirectionalEdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
-        background.strokeColor = .separator
+        background.strokeColor = Self.cardBorderColor
         background.strokeWidth = 1
         cell.backgroundConfiguration = background
     }
@@ -1184,6 +1184,12 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
     }
 
+    /// The card border color: the system separator softened slightly
+    static let cardBorderColor = UIColor { traits in
+        let resolved = UIColor.separator.resolvedColor(with: traits)
+        return resolved.withAlphaComponent(resolved.cgColor.alpha * 0.8)
+    }
+
     /// A rounded, translucent card with a hairline border so it reads against the
     /// equally subtle background gradient
     private final class CardView: UIView {
@@ -1207,7 +1213,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
 
         private func updateBorderColor() {
-            layer.borderColor = UIColor.separator.resolvedColor(with: traitCollection).cgColor
+            layer.borderColor = StatusTableViewController.cardBorderColor.resolvedColor(with: traitCollection).cgColor
         }
     }
 

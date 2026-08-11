@@ -37,13 +37,19 @@ import LoopKitUI
         }
     }
     
+    /// The system separator softened slightly, matching the status screen's cards
+    private var borderColor: CGColor {
+        let resolved = UIColor.separator.resolvedColor(with: traitCollection)
+        return resolved.withAlphaComponent(resolved.cgColor.alpha * 0.8).cgColor
+    }
+
     @IBOutlet private weak var backgroundView: UIView! {
         didSet {
             // Translucent with a hairline border to match the status screen's cards
             backgroundView.backgroundColor = .systemBackground.withAlphaComponent(0.62)
             backgroundView.layer.cornerRadius = 23
             backgroundView.layer.borderWidth = 1
-            backgroundView.layer.borderColor = UIColor.separator.cgColor
+            backgroundView.layer.borderColor = borderColor
         }
     }
 
@@ -51,7 +57,7 @@ import LoopKitUI
         super.traitCollectionDidChange(previousTraitCollection)
 
         // CGColors don't adapt automatically; re-resolve for the new appearance
-        backgroundView?.layer.borderColor = UIColor.separator.resolvedColor(with: traitCollection).cgColor
+        backgroundView?.layer.borderColor = borderColor
     }
     
     @IBOutlet weak var statusStackView: UIStackView!
