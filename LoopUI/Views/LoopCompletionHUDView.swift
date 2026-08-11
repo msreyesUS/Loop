@@ -346,16 +346,19 @@ public final class StatusHeroView: UIView {
         return layer
     }()
 
-    /// A triangular trend arrow riding the ring, pointing outward at the angle of the
-    /// glucose trend (flat at 3 o'clock, rising on the upper arc, falling on the lower)
+    /// A bold triangular trend arrow riding the ring, pointing outward at the angle of
+    /// the glucose trend (flat at 3 o'clock, rising on the upper arc, falling on the
+    /// lower), separated from the ring by a background-colored outline
     private let trendArrowLayer: CAShapeLayer = {
         let layer = CAShapeLayer()
         let path = UIBezierPath()
-        path.move(to: CGPoint(x: -9, y: -11))
-        path.addLine(to: CGPoint(x: -9, y: 11))
-        path.addLine(to: CGPoint(x: 13, y: 0))
+        path.move(to: CGPoint(x: -13, y: -15))
+        path.addLine(to: CGPoint(x: -13, y: 15))
+        path.addLine(to: CGPoint(x: 23, y: 0))
         path.close()
         layer.path = path.cgPath
+        layer.lineWidth = 3.5
+        layer.lineJoin = .round
         layer.isHidden = true
         return layer
     }()
@@ -455,7 +458,8 @@ public final class StatusHeroView: UIView {
             infoStack.widthAnchor.constraint(lessThanOrEqualTo: loopCompletionHUD.widthAnchor, constant: -36),
 
             // Enough clearance below the ring that a downward trend arrow can't touch the text
-            eventualGlucoseLabel.topAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 16),
+            // Clearance for the bold downward trend arrow
+            eventualGlucoseLabel.topAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 28),
             eventualGlucoseLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
             eventualGlucoseLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 8),
             bottomConstraint,
@@ -484,7 +488,8 @@ public final class StatusHeroView: UIView {
             trendArrowLayer.position = CGPoint(x: ringFrame.midX + cos(angle) * radius,
                                                y: ringFrame.midY - sin(angle) * radius)
             trendArrowLayer.setAffineTransform(CGAffineTransform(rotationAngle: -angle))
-            trendArrowLayer.fillColor = (glucoseRangeCategory?.backgroundGradientColor ?? .tertiaryLabel).resolvedColor(with: traitCollection).cgColor
+            trendArrowLayer.fillColor = (UIColor(named: "primaryButton1") ?? .label).resolvedColor(with: traitCollection).cgColor
+            trendArrowLayer.strokeColor = UIColor.systemBackground.resolvedColor(with: traitCollection).cgColor
             trendArrowLayer.isHidden = false
         } else {
             trendArrowLayer.isHidden = true
