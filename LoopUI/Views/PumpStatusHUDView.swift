@@ -39,12 +39,10 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
         label.adjustsFontSizeToFitWidth = true
         label.minimumScaleFactor = 0.8
         label.isHidden = true
+        // Stretch to fill the space next to the pump HUD so the text centers within it
+        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
         return label
     }()
-
-    /// Keeps the pump manager's HUD pinned to the trailing edge while the expiration
-    /// label floats centered over the whole pill
-    private let expirationSpacer = UIView()
 
     /// Sets the expiration text; nil hides the label
     public func setExpiration(text: String?) {
@@ -59,22 +57,12 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
     override public func awakeFromNib() {
         super.awakeFromNib()
 
-        // The spacer takes the space the basal dial occupied, keeping the pump HUD at
-        // the trailing edge; the label overlays the pill, centered on the whole card
-        expirationSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        // The expiration label sits where the basal dial was, before the pod view
         if let basalIndex = statusStackView.arrangedSubviews.firstIndex(of: basalRateHUD) {
-            statusStackView.insertArrangedSubview(expirationSpacer, at: basalIndex + 1)
+            statusStackView.insertArrangedSubview(expirationLabel, at: basalIndex + 1)
         } else {
-            statusStackView.addArrangedSubview(expirationSpacer)
+            statusStackView.addArrangedSubview(expirationLabel)
         }
-
-        expirationLabel.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(expirationLabel)
-        NSLayoutConstraint.activate([
-            expirationLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
-            expirationLabel.centerYAnchor.constraint(equalTo: statusStackView.centerYAnchor),
-            expirationLabel.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, multiplier: 0.6),
-        ])
     }
     
     public override init(frame: CGRect) {
@@ -108,8 +96,7 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
         statusStackView.removeArrangedSubview(basalRateHUD)
 
         expirationLabel.isHidden = true
-        expirationSpacer.isHidden = true
-        statusStackView.removeArrangedSubview(expirationSpacer)
+        statusStackView.removeArrangedSubview(expirationLabel)
 
         if let pumpManagerProvidedHUD = pumpManagerProvidedHUD {
             pumpManagerProvidedHUD.isHidden = true
@@ -129,8 +116,7 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
         statusStackView.addArrangedSubview(basalRateHUD)
         basalRateHUD.isHidden = !showsBasalRate
 
-        statusStackView.addArrangedSubview(expirationSpacer)
-        expirationSpacer.isHidden = false
+        statusStackView.addArrangedSubview(expirationLabel)
         updateExpirationVisibility()
 
         if let pumpManagerProvidedHUD = pumpManagerProvidedHUD {
