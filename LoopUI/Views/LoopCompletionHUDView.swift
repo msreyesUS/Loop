@@ -337,28 +337,32 @@ public final class StatusHeroView: UIView {
         return label
     }()
 
-    /// A thin ring around the glucose reading, colored by range: green in range,
-    /// red low, yellow high, neutral when there is no current reading
+    /// A ring around the glucose reading, colored by range: green in range, red low,
+    /// yellow high, neutral when there is no current reading. Drawn as a filled
+    /// annulus so its outer contour can flow smoothly into the trend bulge.
     private let rangeRingLayer: CAShapeLayer = {
         let layer = CAShapeLayer()
-        layer.fillColor = UIColor.clear.cgColor
-        layer.lineWidth = 12
+        layer.fillRule = .evenOdd
         return layer
     }()
 
-    /// A bold triangular trend arrow riding the ring, pointing outward at the angle of
-    /// the glucose trend (flat at 3 o'clock, rising on the upper arc, falling on the
-    /// lower), separated from the ring by a background-colored outline
+    /// The ring's stroke thickness and the trend bulge geometry
+    private enum RingConstants {
+        static let thickness: CGFloat = 12
+        static let bulgeLength: CGFloat = 24
+        /// Half-span of the bulge along the circle, in radians
+        static let bulgeHalfSpan: CGFloat = 0.5
+    }
+
+    /// The slate triangle inside the trend bulge
     private let trendArrowLayer: CAShapeLayer = {
         let layer = CAShapeLayer()
         let path = UIBezierPath()
-        path.move(to: CGPoint(x: -13, y: -15))
-        path.addLine(to: CGPoint(x: -13, y: 15))
-        path.addLine(to: CGPoint(x: 23, y: 0))
+        path.move(to: CGPoint(x: -9, y: -10))
+        path.addLine(to: CGPoint(x: -9, y: 10))
+        path.addLine(to: CGPoint(x: 15, y: 0))
         path.close()
         layer.path = path.cgPath
-        layer.lineWidth = 3.5
-        layer.lineJoin = .round
         layer.isHidden = true
         return layer
     }()
@@ -477,23 +481,52 @@ public final class StatusHeroView: UIView {
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        rangeRingLayer.path = UIBezierPath(ovalIn: loopCompletionHUD.frame.insetBy(dx: 6, dy: 6)).cgPath
-        rangeRingLayer.strokeColor = rangeRingColor.resolvedColor(with: traitCollection).cgColor
 
-        if let angle = trendArrowAngle {
-            // Ride the ring's stroke: position on the circle at the trend angle,
-            // rotated so the triangle points outward
-            let ringFrame = loopCompletionHUD.frame
-            let radius = ringFrame.width / 2 - 6
-            trendArrowLayer.position = CGPoint(x: ringFrame.midX + cos(angle) * radius,
-                                               y: ringFrame.midY - sin(angle) * radius)
-            trendArrowLayer.setAffineTransform(CGAffineTransform(rotationAngle: -angle))
+        let ringFrame = loopCompletionHUD.frame
+        let center = CGPoint(x: ringFrame.midX, y: ringFrame.midY)
+        let outerRadius = ringFrame.width / 2
+        let innerRadius = outerRadius - RingConstants.thickness
+
+        // Screen-coordinate angles (y down); trend angles are math convention (y up)
+        func polar(_ angle: CGFloat, _ radius: CGFloat) -> CGPoint {
+            CGPoint(x: center.x + cos(angle) * radius, y: center.y + sin(angle) * radius)
+        }
+
+        let ringPath = UIBezierPath()
+        if let trendAngle = trendArrowAngle {
+            // The outer contour follows the circle, then flows out to a point at the
+            // trend angle and back, like a droplet
+            let bulgeAngle = -trendAngle
+            let halfSpan = RingConstants.bulgeHalfSpan
+            let tipRadius = outerRadius + RingConstants.bulgeLength
+            let controlRadius = outerRadius + RingConstants.bulgeLength * 0.42
+
+            ringPath.addArc(withCenter: center, radius: outerRadius,
+                            startAngle: bulgeAngle + halfSpan, endAngle: bulgeAngle - halfSpan,
+                            clockwise: true)
+            ringPath.addQuadCurve(to: polar(bulgeAngle, tipRadius),
+                                  controlPoint: polar(bulgeAngle - halfSpan * 0.32, controlRadius))
+            ringPath.addQuadCurve(to: polar(bulgeAngle + halfSpan, outerRadius),
+                                  controlPoint: polar(bulgeAngle + halfSpan * 0.32, controlRadius))
+            ringPath.close()
+
+            trendArrowLayer.position = polar(bulgeAngle, outerRadius + RingConstants.bulgeLength * 0.3)
+            trendArrowLayer.setAffineTransform(CGAffineTransform(rotationAngle: bulgeAngle))
             trendArrowLayer.fillColor = (UIColor(named: "primaryButton1") ?? .label).resolvedColor(with: traitCollection).cgColor
-            trendArrowLayer.strokeColor = UIColor.systemBackground.resolvedColor(with: traitCollection).cgColor
             trendArrowLayer.isHidden = false
         } else {
+            ringPath.addArc(withCenter: center, radius: outerRadius,
+                            startAngle: 0, endAngle: 2 * .pi, clockwise: true)
             trendArrowLayer.isHidden = true
         }
+        // Inner edge of the annulus (even-odd fill leaves the middle clear)
+        ringPath.move(to: polar(0, innerRadius))
+        ringPath.addArc(withCenter: center, radius: innerRadius,
+                        startAngle: 0, endAngle: 2 * .pi, clockwise: true)
+
+        rangeRingLayer.path = ringPath.cgPath
+        rangeRingLayer.fillColor = rangeRingColor.resolvedColor(with: traitCollection).cgColor
+
         CATransaction.commit()
     }
 
