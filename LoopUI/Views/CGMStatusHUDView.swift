@@ -46,7 +46,10 @@ public final class CGMStatusHUDView: DeviceStatusHUDView, NibLoadable {
     
     override func setup() {
         super.setup()
-        statusHighlightView.setIconPosition(.right)
+        // Icon leads, mirroring the pump pill's trailing pod icon; nudged in from the
+        // pill edge and rendered slightly larger
+        statusHighlightView.setIconPosition(.left)
+        statusHighlightView.icon.transform = CGAffineTransform(translationX: 7, y: 0).scaledBy(x: 1.15, y: 1.15)
         viewModel = CGMStatusHUDViewModel(staleGlucoseValueHandler: { [weak self] in
             self?.updateDisplay()
         })
