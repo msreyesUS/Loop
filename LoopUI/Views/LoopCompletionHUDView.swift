@@ -267,7 +267,7 @@ public final class StatusHeroView: UIView {
 
     private enum LayoutConstants {
         static let ringDiameter: CGFloat = 192
-        static let glucoseFontSize: CGFloat = 92
+        static let glucoseFontSize: CGFloat = 80
     }
 
     public let loopCompletionHUD = LoopCompletionHUDView(frame: CGRect(x: 0, y: 0, width: LayoutConstants.ringDiameter, height: LayoutConstants.ringDiameter))
@@ -369,18 +369,25 @@ public final class StatusHeroView: UIView {
     /// The disc filling the ring's center, flooded with the state color when out of range
     private let centerDiscLayer = CAShapeLayer()
 
-    /// Dexcom-style state color: neutral white while in range, the whole face
-    /// yellow when high, red when low
-    private var ringStateColor: UIColor {
-        switch glucoseRangeCategory {
-        case .high, .aboveRange:
-            return .warning
-        case .low, .belowRange, .urgentLow:
-            return .critical
-        default:
-            return .systemBackground
-        }
-    }
+    /// The coin's base: fills the whole silhouette (including the bulge) and carries
+    /// the drop shadow
+    private let ringShadowLayer: CAShapeLayer = {
+        let layer = CAShapeLayer()
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.16
+        layer.shadowRadius = 9
+        layer.shadowOffset = CGSize(width: 0, height: 5)
+        return layer
+    }()
+
+    /// The ring's paint: a gradient masked to the annulus-plus-bulge shape
+    private let ringGradientLayer: CAGradientLayer = {
+        let layer = CAGradientLayer()
+        layer.startPoint = CGPoint(x: 0.3, y: 0)
+        layer.endPoint = CGPoint(x: 0.7, y: 1)
+        return layer
+    }()
+
 
     private var trendArrowAngle: CGFloat? {
         // Radians, 0 at 3 o'clock, positive rising
@@ -424,8 +431,11 @@ public final class StatusHeroView: UIView {
         infoStack.alignment = .center
         infoStack.spacing = 4
 
+        layer.addSublayer(ringShadowLayer)
         layer.addSublayer(centerDiscLayer)
-        layer.addSublayer(rangeRingLayer)
+        layer.addSublayer(ringGradientLayer)
+        // The ring shape masks the gradient rather than painting directly
+        ringGradientLayer.mask = rangeRingLayer
         layer.addSublayer(trendArrowLayer)
 
         loopCompletionHUD.translatesAutoresizingMaskIntoConstraints = false
@@ -568,37 +578,53 @@ public final class StatusHeroView: UIView {
                             startAngle: 0, endAngle: 2 * .pi, clockwise: true)
             trendArrowLayer.isHidden = true
         }
+        // The coin's base fills the whole silhouette (including the bulge) and casts
+        // the drop shadow
+        ringShadowLayer.path = ringPath.cgPath
+        ringShadowLayer.shadowPath = ringPath.cgPath
+        ringShadowLayer.fillColor = UIColor.systemBackground.resolvedColor(with: traitCollection).cgColor
+
         // Inner edge of the annulus (even-odd fill leaves the middle clear)
         ringPath.move(to: polar(0, innerRadius))
         ringPath.addArc(withCenter: center, radius: innerRadius,
                         startAngle: 0, endAngle: 2 * .pi, clockwise: true)
 
+        // The ring is painted by a gradient masked to the annulus-plus-bulge shape:
+        // a soft grey with dimension while in range, the state color when out
         rangeRingLayer.path = ringPath.cgPath
-        let stateColor = ringStateColor.resolvedColor(with: traitCollection)
-        rangeRingLayer.fillColor = stateColor.cgColor
+        ringGradientLayer.frame = bounds
+
+        func lightened(_ color: UIColor, by fraction: CGFloat) -> UIColor {
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            color.getRed(&r, green: &g, blue: &b, alpha: &a)
+            return UIColor(red: r + (1 - r) * fraction, green: g + (1 - g) * fraction, blue: b + (1 - b) * fraction, alpha: a)
+        }
+
+        let stateColor: UIColor
+        switch glucoseRangeCategory {
+        case .high, .aboveRange:
+            stateColor = .warning
+        case .low, .belowRange, .urgentLow:
+            stateColor = .critical
+        default:
+            stateColor = .systemBackground
+        }
+        let resolvedState = stateColor.resolvedColor(with: traitCollection)
+
+        if stateColor == .systemBackground {
+            // In range: a subtle grey gradient from the same family as the app's greys
+            let light = UIColor.systemGray5.resolvedColor(with: traitCollection)
+            let dark = UIColor.systemGray3.resolvedColor(with: traitCollection)
+            ringGradientLayer.colors = [light.cgColor, dark.cgColor]
+        } else {
+            ringGradientLayer.colors = [lightened(resolvedState, by: 0.18).cgColor, resolvedState.cgColor]
+        }
 
         // The center disc floods with the state color (white in range, yellow high,
         // red low), slightly overlapping the ring's inner edge to avoid a seam
         centerDiscLayer.path = UIBezierPath(arcCenter: center, radius: innerRadius + 1,
                                             startAngle: 0, endAngle: 2 * .pi, clockwise: true).cgPath
-        centerDiscLayer.fillColor = stateColor.cgColor
-        // Thin outline tracing both the outer contour (including the bulge) and the
-        // inner edge. The card border color is translucent, which composites darker
-        // over the saturated ring fill, so flatten it over the card background into
-        // an opaque grey that paints identically here and on the cards.
-        let resolvedSeparator = UIColor.separator.resolvedColor(with: traitCollection)
-        let separatorAlpha = resolvedSeparator.cgColor.alpha * 0.8
-        let cardBackground = UIColor.systemBackground.resolvedColor(with: traitCollection)
-        var sr: CGFloat = 0, sg: CGFloat = 0, sb: CGFloat = 0, sa: CGFloat = 0
-        var br: CGFloat = 0, bg: CGFloat = 0, bb: CGFloat = 0, ba: CGFloat = 0
-        resolvedSeparator.getRed(&sr, green: &sg, blue: &sb, alpha: &sa)
-        cardBackground.getRed(&br, green: &bg, blue: &bb, alpha: &ba)
-        let outlineColor = UIColor(red: sr * separatorAlpha + br * (1 - separatorAlpha),
-                                   green: sg * separatorAlpha + bg * (1 - separatorAlpha),
-                                   blue: sb * separatorAlpha + bb * (1 - separatorAlpha),
-                                   alpha: 1)
-        rangeRingLayer.strokeColor = outlineColor.cgColor
-        rangeRingLayer.lineWidth = 1.5
+        centerDiscLayer.fillColor = resolvedState.cgColor
 
         CATransaction.commit()
     }
