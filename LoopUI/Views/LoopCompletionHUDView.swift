@@ -569,9 +569,21 @@ public final class StatusHeroView: UIView {
         rangeRingLayer.path = ringPath.cgPath
         rangeRingLayer.fillColor = rangeRingColor.resolvedColor(with: traitCollection).cgColor
         // Thin outline tracing both the outer contour (including the bulge) and the
-        // inner edge, in the same softened separator color the cards use
+        // inner edge. The card border color is translucent, which composites darker
+        // over the saturated ring fill, so flatten it over the card background into
+        // an opaque grey that paints identically here and on the cards.
         let resolvedSeparator = UIColor.separator.resolvedColor(with: traitCollection)
-        rangeRingLayer.strokeColor = resolvedSeparator.withAlphaComponent(resolvedSeparator.cgColor.alpha * 0.8).cgColor
+        let separatorAlpha = resolvedSeparator.cgColor.alpha * 0.8
+        let cardBackground = UIColor.systemBackground.resolvedColor(with: traitCollection)
+        var sr: CGFloat = 0, sg: CGFloat = 0, sb: CGFloat = 0, sa: CGFloat = 0
+        var br: CGFloat = 0, bg: CGFloat = 0, bb: CGFloat = 0, ba: CGFloat = 0
+        resolvedSeparator.getRed(&sr, green: &sg, blue: &sb, alpha: &sa)
+        cardBackground.getRed(&br, green: &bg, blue: &bb, alpha: &ba)
+        let outlineColor = UIColor(red: sr * separatorAlpha + br * (1 - separatorAlpha),
+                                   green: sg * separatorAlpha + bg * (1 - separatorAlpha),
+                                   blue: sb * separatorAlpha + bb * (1 - separatorAlpha),
+                                   alpha: 1)
+        rangeRingLayer.strokeColor = outlineColor.cgColor
         rangeRingLayer.lineWidth = 1.5
 
         CATransaction.commit()
@@ -622,7 +634,13 @@ public final class StatusHeroView: UIView {
             glucoseLabel.textColor = .tertiaryLabel
         } else {
             glucoseLabel.text = viewModel.glucoseValueString
-            glucoseLabel.textColor = viewModel.glucoseValueTintColor
+            // The value renders in the palette slate; sensor-limit LOW/HIGH tints
+            // from the view model still take precedence
+            if viewModel.glucoseValueTintColor == .label {
+                glucoseLabel.textColor = UIColor(named: "primaryButton1") ?? .label
+            } else {
+                glucoseLabel.textColor = viewModel.glucoseValueTintColor
+            }
         }
         infoLabel.text = viewModel.unitsString
 
