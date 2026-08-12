@@ -37,10 +37,18 @@ import LoopKitUI
         }
     }
     
-    /// The system separator softened slightly, matching the status screen's cards
+    /// The system separator heavily softened, matching the status screen's cards
     private var borderColor: CGColor {
         let resolved = UIColor.separator.resolvedColor(with: traitCollection)
-        return resolved.withAlphaComponent(resolved.cgColor.alpha * 0.8).cgColor
+        return resolved.withAlphaComponent(resolved.cgColor.alpha * 0.35).cgColor
+    }
+
+    /// Hides the pill's own background, for hosts that provide a shared card behind
+    /// multiple HUDs
+    public var showsBackground: Bool = true {
+        didSet {
+            backgroundView?.isHidden = !showsBackground
+        }
     }
 
     @IBOutlet private weak var backgroundView: UIView! {

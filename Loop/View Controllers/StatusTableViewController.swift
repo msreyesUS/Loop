@@ -969,10 +969,10 @@ final class StatusTableViewController: LoopChartsTableViewController {
     }
 
     /// Applies the translucent rounded card background used across the status screen
-    private func applyCardBackground(to cell: UITableViewCell) {
+    private func applyCardBackground(to cell: UITableViewCell, cornerRadius: CGFloat = 14) {
         var background = UIBackgroundConfiguration.clear()
         background.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.62)
-        background.cornerRadius = 14
+        background.cornerRadius = cornerRadius
         background.backgroundInsets = NSDirectionalEdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
         background.strokeColor = Self.cardBorderColor
         background.strokeWidth = 1
@@ -1184,10 +1184,10 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
     }
 
-    /// The card border color: the system separator softened slightly
+    /// The card border color: the system separator, heavily softened
     static let cardBorderColor = UIColor { traits in
         let resolved = UIColor.separator.resolvedColor(with: traits)
-        return resolved.withAlphaComponent(resolved.cgColor.alpha * 0.8)
+        return resolved.withAlphaComponent(resolved.cgColor.alpha * 0.35)
     }
 
     /// A rounded, translucent card with a hairline border so it reads against the
@@ -1199,6 +1199,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
             layer.cornerRadius = cornerRadius
             layer.cornerCurve = .continuous
             layer.borderWidth = 1
+            // A whisper of depth in place of the heavier border
+            layer.shadowColor = UIColor.black.cgColor
+            layer.shadowOpacity = 0.05
+            layer.shadowRadius = 5
+            layer.shadowOffset = CGSize(width: 0, height: 2)
             translatesAutoresizingMaskIntoConstraints = false
             updateBorderColor()
         }
@@ -1478,7 +1483,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 chartView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
                 chartView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
                 chartView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6),
-                chartView.heightAnchor.constraint(equalToConstant: 110),
+                chartView.heightAnchor.constraint(equalToConstant: 92),
                 chartView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -10),
 
                 cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
@@ -1596,10 +1601,10 @@ final class StatusTableViewController: LoopChartsTableViewController {
             config.cornerStyle = .large
             config.baseForegroundColor = .white
             config.baseBackgroundColor = color
-            config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 8, bottom: 10, trailing: 8)
+            config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
             let button = UIButton(configuration: config)
             button.tintColor = color
-            button.heightAnchor.constraint(greaterThanOrEqualToConstant: 64).isActive = true
+            button.heightAnchor.constraint(greaterThanOrEqualToConstant: 56).isActive = true
             return button
         }
 
@@ -1716,8 +1721,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 stack.topAnchor.constraint(equalTo: capsuleContainer.topAnchor),
                 stack.bottomAnchor.constraint(equalTo: capsuleContainer.bottomAnchor),
 
-                capsuleContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
-                capsuleContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
+                capsuleContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+                capsuleContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
                 capsuleContainer.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
                 capsuleContainer.heightAnchor.constraint(equalToConstant: 64),
                 bottomConstraint,
@@ -1860,9 +1865,12 @@ final class StatusTableViewController: LoopChartsTableViewController {
         case .hud:
             let cell = tableView.dequeueReusableCell(withIdentifier: HUDViewTableViewCell.className, for: indexPath) as! HUDViewTableViewCell
             cell.backgroundColor = .clear
-            // The HUD bar sets an opaque background at setup; the pills inside provide
-            // their own contrast, so let the screen gradient show behind them
             cell.hudView.backgroundColor = .clear
+            // One shared card behind sensor, loop ring, and pump, mirroring the
+            // bottom action bar; the pills drop their individual backgrounds
+            cell.hudView.cgmStatusHUD.showsBackground = false
+            cell.hudView.pumpStatusHUD.showsBackground = false
+            applyCardBackground(to: cell, cornerRadius: 20)
             hudView = cell.hudView
 
             return cell

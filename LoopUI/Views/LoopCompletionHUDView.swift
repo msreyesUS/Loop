@@ -463,7 +463,7 @@ public final class StatusHeroView: UIView {
             loopCompletionHUD.heightAnchor.constraint(equalTo: loopCompletionHUD.widthAnchor),
             loopCompletionHUD.centerXAnchor.constraint(equalTo: centerXAnchor),
             // Clearance for the trend bulge pointing straight up
-            loopCompletionHUD.topAnchor.constraint(equalTo: topAnchor, constant: 56),
+            loopCompletionHUD.topAnchor.constraint(equalTo: topAnchor, constant: 52),
 
             // The glucose value itself is centered in the ring; the trend/unit line
             // hangs below it so it doesn't drag the number off center
@@ -475,9 +475,8 @@ public final class StatusHeroView: UIView {
             infoStack.topAnchor.constraint(equalTo: glucoseLabel.bottomAnchor, constant: -11),
             infoStack.widthAnchor.constraint(lessThanOrEqualTo: loopCompletionHUD.widthAnchor, constant: -36),
 
-            // Enough clearance below the ring that a downward trend arrow can't touch the text
             // Clearance for the trend bulge pointing straight down
-            eventualGlucoseLabel.topAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 56),
+            eventualGlucoseLabel.topAnchor.constraint(equalTo: loopCompletionHUD.bottomAnchor, constant: 52),
             eventualGlucoseLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
             eventualGlucoseLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 8),
             bottomConstraint,
