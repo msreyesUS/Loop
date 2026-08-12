@@ -329,14 +329,6 @@ public final class StatusHeroView: UIView {
         return label
     }()
 
-    private let titleLabel: UILabel = {
-        let label = UILabel()
-        label.font = .systemFont(ofSize: 14, weight: .semibold)
-        label.textColor = .secondaryLabel
-        label.text = LocalizedString("Glucose", comment: "The title above the glucose value on the status screen glucose card")
-        return label
-    }()
-
     /// A ring around the glucose reading, colored by range: green in range, red low,
     /// yellow high, neutral when there is no current reading. Drawn as a filled
     /// annulus so its outer contour can flow smoothly into the trend bulge.
@@ -442,9 +434,7 @@ public final class StatusHeroView: UIView {
         glucoseLabel.translatesAutoresizingMaskIntoConstraints = false
         infoStack.translatesAutoresizingMaskIntoConstraints = false
         eventualGlucoseLabel.translatesAutoresizingMaskIntoConstraints = false
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        addSubview(titleLabel)
         addSubview(loopCompletionHUD)
         addSubview(glucoseLabel)
         addSubview(infoStack)
@@ -465,12 +455,6 @@ public final class StatusHeroView: UIView {
             // Clearance for the trend bulge pointing straight up
             loopCompletionHUD.topAnchor.constraint(equalTo: topAnchor, constant: 56),
 
-            // The title sits inside the ring, spaced evenly above the glucose value just
-            // as the unit line is below it. The overlap constants compensate for the
-            // large font's built-in ascender/descender whitespace.
-            titleLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
-            titleLabel.bottomAnchor.constraint(equalTo: glucoseLabel.topAnchor, constant: 14),
-
             // The glucose value itself is centered in the ring; the trend/unit line
             // hangs below it so it doesn't drag the number off center
             glucoseLabel.centerXAnchor.constraint(equalTo: loopCompletionHUD.centerXAnchor),
@@ -478,7 +462,7 @@ public final class StatusHeroView: UIView {
             glucoseLabel.widthAnchor.constraint(lessThanOrEqualTo: loopCompletionHUD.widthAnchor, constant: -36),
 
             infoStack.centerXAnchor.constraint(equalTo: loopCompletionHUD.centerXAnchor),
-            infoStack.topAnchor.constraint(equalTo: glucoseLabel.bottomAnchor, constant: -16),
+            infoStack.topAnchor.constraint(equalTo: glucoseLabel.bottomAnchor, constant: -11),
             infoStack.widthAnchor.constraint(lessThanOrEqualTo: loopCompletionHUD.widthAnchor, constant: -36),
 
             // Enough clearance below the ring that a downward trend arrow can't touch the text
