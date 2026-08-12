@@ -374,9 +374,9 @@ public final class StatusHeroView: UIView {
     private let ringShadowLayer: CAShapeLayer = {
         let layer = CAShapeLayer()
         layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.16
-        layer.shadowRadius = 9
-        layer.shadowOffset = CGSize(width: 0, height: 5)
+        layer.shadowOpacity = 0.11
+        layer.shadowRadius = 7
+        layer.shadowOffset = CGSize(width: 0, height: 4)
         return layer
     }()
 
