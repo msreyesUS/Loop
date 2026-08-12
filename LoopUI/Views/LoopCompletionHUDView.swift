@@ -267,7 +267,7 @@ public final class StatusHeroView: UIView {
 
     private enum LayoutConstants {
         static let ringDiameter: CGFloat = 192
-        static let glucoseFontSize: CGFloat = 80
+        static let glucoseFontSize: CGFloat = 64
     }
 
     public let loopCompletionHUD = LoopCompletionHUDView(frame: CGRect(x: 0, y: 0, width: LayoutConstants.ringDiameter, height: LayoutConstants.ringDiameter))
