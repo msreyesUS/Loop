@@ -366,11 +366,20 @@ public final class StatusHeroView: UIView {
         return layer
     }()
 
-    private var rangeRingColor: UIColor {
-        guard let category = glucoseRangeCategory else {
-            return UIColor.tertiaryLabel.withAlphaComponent(0.3)
+    /// The disc filling the ring's center, flooded with the state color when out of range
+    private let centerDiscLayer = CAShapeLayer()
+
+    /// Dexcom-style state color: neutral white while in range, the whole face
+    /// yellow when high, red when low
+    private var ringStateColor: UIColor {
+        switch glucoseRangeCategory {
+        case .high, .aboveRange:
+            return .warning
+        case .low, .belowRange, .urgentLow:
+            return .critical
+        default:
+            return .systemBackground
         }
-        return category.backgroundGradientColor.withAlphaComponent(0.95)
     }
 
     private var trendArrowAngle: CGFloat? {
@@ -415,6 +424,7 @@ public final class StatusHeroView: UIView {
         infoStack.alignment = .center
         infoStack.spacing = 4
 
+        layer.addSublayer(centerDiscLayer)
         layer.addSublayer(rangeRingLayer)
         layer.addSublayer(trendArrowLayer)
 
@@ -530,11 +540,9 @@ public final class StatusHeroView: UIView {
                               controlPoint2: offset(aPoint, along: tangentA, by: tangentReach))
             ringPath.close()
 
-            // The arrow is cut out of the bulge (even-odd fill), showing the card
-            // background through it as negative space. Same apex angle as the bulge
-            // walls, inset by a constant perpendicular margin so the ring-colored
-            // border around it is uniform; its base is an arc concentric with the
-            // ring, so it contours with the circle.
+            // Solid slate arrow with the same apex angle as the bulge walls, inset by a
+            // constant perpendicular margin so the border around it is uniform; its
+            // base is an arc concentric with the ring, so it contours with the circle.
             let apexX = RingConstants.bulgeLength - RingConstants.arrowMargin / sin(tipHalfAngle)
             let baseX: CGFloat = -2
             let halfHeight = (apexX - baseX) * tan(tipHalfAngle)
@@ -550,12 +558,11 @@ public final class StatusHeroView: UIView {
             arrowPath.addArc(withCenter: ringCenterLocal, radius: baseRadius,
                              startAngle: baseHalfAngle, endAngle: -baseHalfAngle, clockwise: false)
             arrowPath.close()
-
-            let anchor = polar(bulgeAngle, outerRadius)
-            arrowPath.apply(CGAffineTransform(rotationAngle: bulgeAngle)
-                .concatenating(CGAffineTransform(translationX: anchor.x, y: anchor.y)))
-            ringPath.append(arrowPath)
-            trendArrowLayer.isHidden = true
+            trendArrowLayer.path = arrowPath.cgPath
+            trendArrowLayer.position = polar(bulgeAngle, outerRadius)
+            trendArrowLayer.setAffineTransform(CGAffineTransform(rotationAngle: bulgeAngle))
+            trendArrowLayer.fillColor = (UIColor(named: "primaryButton1") ?? .label).resolvedColor(with: traitCollection).cgColor
+            trendArrowLayer.isHidden = false
         } else {
             ringPath.addArc(withCenter: center, radius: outerRadius,
                             startAngle: 0, endAngle: 2 * .pi, clockwise: true)
@@ -567,7 +574,14 @@ public final class StatusHeroView: UIView {
                         startAngle: 0, endAngle: 2 * .pi, clockwise: true)
 
         rangeRingLayer.path = ringPath.cgPath
-        rangeRingLayer.fillColor = rangeRingColor.resolvedColor(with: traitCollection).cgColor
+        let stateColor = ringStateColor.resolvedColor(with: traitCollection)
+        rangeRingLayer.fillColor = stateColor.cgColor
+
+        // The center disc floods with the state color (white in range, yellow high,
+        // red low), slightly overlapping the ring's inner edge to avoid a seam
+        centerDiscLayer.path = UIBezierPath(arcCenter: center, radius: innerRadius + 1,
+                                            startAngle: 0, endAngle: 2 * .pi, clockwise: true).cgPath
+        centerDiscLayer.fillColor = stateColor.cgColor
         // Thin outline tracing both the outer contour (including the bulge) and the
         // inner edge. The card border color is translucent, which composites darker
         // over the saturated ring fill, so flatten it over the card background into
