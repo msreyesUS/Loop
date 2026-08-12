@@ -534,14 +534,22 @@ public final class StatusHeroView: UIView {
 
             // Solid slate arrow with the same apex angle as the bulge walls, inset by a
             // constant perpendicular margin so the ring-colored border around it is
-            // uniform from base to tip
+            // uniform from base to tip. The base is an arc concentric with the ring,
+            // so the arrow contours with the circle instead of cutting straight across.
             let apexX = RingConstants.bulgeLength - RingConstants.arrowMargin / sin(tipHalfAngle)
             let baseX: CGFloat = -2
             let halfHeight = (apexX - baseX) * tan(tipHalfAngle)
+            // Local coordinates: origin on the ring's outer edge, +x outward;
+            // the ring's center sits at (-outerRadius, 0)
+            let ringCenterLocal = CGPoint(x: -outerRadius, y: 0)
+            let baseRadius = outerRadius + baseX
+            let baseHalfAngle = asin(min(1, halfHeight / baseRadius))
             let arrowPath = UIBezierPath()
-            arrowPath.move(to: CGPoint(x: baseX, y: -halfHeight))
-            arrowPath.addLine(to: CGPoint(x: baseX, y: halfHeight))
-            arrowPath.addLine(to: CGPoint(x: apexX, y: 0))
+            arrowPath.move(to: CGPoint(x: apexX, y: 0))
+            arrowPath.addLine(to: CGPoint(x: ringCenterLocal.x + cos(baseHalfAngle) * baseRadius,
+                                          y: sin(baseHalfAngle) * baseRadius))
+            arrowPath.addArc(withCenter: ringCenterLocal, radius: baseRadius,
+                             startAngle: baseHalfAngle, endAngle: -baseHalfAngle, clockwise: false)
             arrowPath.close()
             trendArrowLayer.path = arrowPath.cgPath
             trendArrowLayer.position = polar(bulgeAngle, outerRadius)
