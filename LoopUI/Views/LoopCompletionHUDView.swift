@@ -492,8 +492,6 @@ public final class StatusHeroView: UIView {
             CGPoint(x: center.x + cos(angle) * radius, y: center.y + sin(angle) * radius)
         }
 
-        let slate = (UIColor(named: "primaryButton1") ?? .label).resolvedColor(with: traitCollection)
-
         let ringPath = UIBezierPath()
         if let trendAngle = trendArrowAngle {
             // The outer contour follows the circle, then flows out to a point at the
@@ -532,10 +530,11 @@ public final class StatusHeroView: UIView {
                               controlPoint2: offset(aPoint, along: tangentA, by: tangentReach))
             ringPath.close()
 
-            // Solid slate arrow with the same apex angle as the bulge walls, inset by a
-            // constant perpendicular margin so the ring-colored border around it is
-            // uniform from base to tip. The base is an arc concentric with the ring,
-            // so the arrow contours with the circle instead of cutting straight across.
+            // The arrow is cut out of the bulge (even-odd fill), showing the card
+            // background through it as negative space. Same apex angle as the bulge
+            // walls, inset by a constant perpendicular margin so the ring-colored
+            // border around it is uniform; its base is an arc concentric with the
+            // ring, so it contours with the circle.
             let apexX = RingConstants.bulgeLength - RingConstants.arrowMargin / sin(tipHalfAngle)
             let baseX: CGFloat = -2
             let halfHeight = (apexX - baseX) * tan(tipHalfAngle)
@@ -551,11 +550,12 @@ public final class StatusHeroView: UIView {
             arrowPath.addArc(withCenter: ringCenterLocal, radius: baseRadius,
                              startAngle: baseHalfAngle, endAngle: -baseHalfAngle, clockwise: false)
             arrowPath.close()
-            trendArrowLayer.path = arrowPath.cgPath
-            trendArrowLayer.position = polar(bulgeAngle, outerRadius)
-            trendArrowLayer.setAffineTransform(CGAffineTransform(rotationAngle: bulgeAngle))
-            trendArrowLayer.fillColor = slate.cgColor
-            trendArrowLayer.isHidden = false
+
+            let anchor = polar(bulgeAngle, outerRadius)
+            arrowPath.apply(CGAffineTransform(rotationAngle: bulgeAngle)
+                .concatenating(CGAffineTransform(translationX: anchor.x, y: anchor.y)))
+            ringPath.append(arrowPath)
+            trendArrowLayer.isHidden = true
         } else {
             ringPath.addArc(withCenter: center, radius: outerRadius,
                             startAngle: 0, endAngle: 2 * .pi, clockwise: true)
