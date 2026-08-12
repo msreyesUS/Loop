@@ -285,7 +285,17 @@ public final class StatusHeroView: UIView {
     public var glucoseRangeCategory: GlucoseRangeCategory? {
         didSet {
             updateBackgroundTint()
+            updateGlucoseDisplay()
             setNeedsLayout()
+        }
+    }
+
+    private var isLowState: Bool {
+        switch glucoseRangeCategory {
+        case .low, .belowRange, .urgentLow:
+            return true
+        default:
+            return false
         }
     }
 
@@ -578,12 +588,6 @@ public final class StatusHeroView: UIView {
         rangeRingLayer.path = ringPath.cgPath
         ringGradientLayer.frame = bounds
 
-        func lightened(_ color: UIColor, by fraction: CGFloat) -> UIColor {
-            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-            color.getRed(&r, green: &g, blue: &b, alpha: &a)
-            return UIColor(red: r + (1 - r) * fraction, green: g + (1 - g) * fraction, blue: b + (1 - b) * fraction, alpha: a)
-        }
-
         let stateColor: UIColor
         switch glucoseRangeCategory {
         case .high, .aboveRange:
@@ -595,14 +599,10 @@ public final class StatusHeroView: UIView {
         }
         let resolvedState = stateColor.resolvedColor(with: traitCollection)
 
-        if stateColor == .systemBackground {
-            // In range: a subtle grey gradient from the same family as the app's greys
-            let light = UIColor.systemGray5.resolvedColor(with: traitCollection)
-            let dark = UIColor.systemGray3.resolvedColor(with: traitCollection)
-            ringGradientLayer.colors = [light.cgColor, dark.cgColor]
-        } else {
-            ringGradientLayer.colors = [lightened(resolvedState, by: 0.18).cgColor, resolvedState.cgColor]
-        }
+        // The grey ring is constant across states; only the center disc floods
+        let light = UIColor.systemGray5.resolvedColor(with: traitCollection)
+        let dark = UIColor.systemGray3.resolvedColor(with: traitCollection)
+        ringGradientLayer.colors = [light.cgColor, dark.cgColor]
 
         // The center disc floods with the state color (white in range, yellow high,
         // red low), slightly overlapping the ring's inner edge to avoid a seam
@@ -658,15 +658,19 @@ public final class StatusHeroView: UIView {
             glucoseLabel.textColor = .tertiaryLabel
         } else {
             glucoseLabel.text = viewModel.glucoseValueString
-            // The value renders in the palette slate; sensor-limit LOW/HIGH tints
-            // from the view model still take precedence
-            if viewModel.glucoseValueTintColor == .label {
+            if isLowState {
+                // On the red disc, the value and unit read in white
+                glucoseLabel.textColor = .white
+            } else if viewModel.glucoseValueTintColor == .label {
+                // The value renders in the palette slate; sensor-limit tints from
+                // the view model still take precedence
                 glucoseLabel.textColor = UIColor(named: "primaryButton1") ?? .label
             } else {
                 glucoseLabel.textColor = viewModel.glucoseValueTintColor
             }
         }
         infoLabel.text = viewModel.unitsString
+        infoLabel.textColor = isLowState ? .white : .secondaryLabel
 
         // Reposition the ring's trend arrow for the new trend
         setNeedsLayout()
