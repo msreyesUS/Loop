@@ -851,12 +851,12 @@ final class StatusTableViewController: LoopChartsTableViewController {
         return formatter
     }()
 
-    /// Shows the pod expiration in the pump pill, derived from the lifecycle progress
-    /// (percent of the pod's 72-hour nominal life)
+    /// Shows the pod expiration in the pump pill, derived from the lifecycle progress.
+    /// The pod's progress reports the REMAINING fraction of its 72-hour nominal life.
     private func updatePodExpiration(on hudView: StatusBarHUDView) {
-        if let progress = deviceManager.pumpLifecycleProgress, progress.percentComplete < 1 {
+        if let progress = deviceManager.pumpLifecycleProgress, progress.percentComplete > 0 {
             let nominalPodLife = TimeInterval(hours: 72)
-            let remaining = (1 - progress.percentComplete) * nominalPodLife
+            let remaining = progress.percentComplete * nominalPodLife
             let expiration = Date(timeIntervalSinceNow: remaining)
             hudView.pumpStatusHUD.setExpiration(text: podExpirationFormatter.string(from: expiration))
         } else {

@@ -46,10 +46,10 @@ public final class CGMStatusHUDView: DeviceStatusHUDView, NibLoadable {
     
     override func setup() {
         super.setup()
-        // Icon leads, mirroring the pump pill's trailing pod icon; nudged in from the
-        // pill edge and rendered slightly larger
+        // Icon leads, mirroring the pump pill's trailing pod icon; inset from the
+        // card edge to match the pod's padding, and rendered slightly larger
         statusHighlightView.setIconPosition(.left)
-        statusHighlightView.icon.transform = CGAffineTransform(translationX: 7, y: 0).scaledBy(x: 1.15, y: 1.15)
+        statusHighlightView.icon.transform = CGAffineTransform(translationX: 14, y: 0).scaledBy(x: 1.15, y: 1.15)
         viewModel = CGMStatusHUDViewModel(staleGlucoseValueHandler: { [weak self] in
             self?.updateDisplay()
         })
@@ -59,8 +59,8 @@ public final class CGMStatusHUDView: DeviceStatusHUDView, NibLoadable {
         super.awakeFromNib()
 
         // Mirror the lifecycle bar so it fills toward the pill's outer (leading) edge,
-        // the reverse of the pump pill's bar
-        progressView.transform = CGAffineTransform(scaleX: -1, y: 1)
+        // the reverse of the pump pill's bar; keep the shared vertical lift
+        progressView.transform = CGAffineTransform(translationX: 0, y: -7).scaledBy(x: -1, y: 1)
     }
     
     override public func tintColorDidChange() {

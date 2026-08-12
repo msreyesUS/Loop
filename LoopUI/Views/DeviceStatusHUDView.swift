@@ -51,6 +51,14 @@ import LoopKitUI
         }
     }
 
+    open override func awakeFromNib() {
+        super.awakeFromNib()
+
+        // Lift the lifecycle bar so it sits padded within the card rather than
+        // hugging its bottom edge
+        progressView.transform = CGAffineTransform(translationX: 0, y: -7)
+    }
+
     @IBOutlet private weak var backgroundView: UIView! {
         didSet {
             // Translucent with a hairline border to match the status screen's cards
