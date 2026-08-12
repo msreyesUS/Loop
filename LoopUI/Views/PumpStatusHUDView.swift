@@ -32,7 +32,7 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
     /// styled to match the status highlight message
     public let expirationLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 16, weight: .medium)
+        label.font = .systemFont(ofSize: 16, weight: .semibold)
         label.textColor = .label
         label.numberOfLines = 2
         label.textAlignment = .center
