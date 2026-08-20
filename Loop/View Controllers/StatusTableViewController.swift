@@ -845,9 +845,16 @@ final class StatusTableViewController: LoopChartsTableViewController {
         return formatter
     }()
 
-    private lazy var podExpirationFormatter: DateFormatter = {
+    private lazy var expirationDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.setLocalizedDateFormatFromTemplate("EEE jmm")
+        formatter.setLocalizedDateFormatFromTemplate("MMMd")
+        return formatter
+    }()
+
+    private lazy var expirationTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
         return formatter
     }()
 
@@ -858,7 +865,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
             let nominalPodLife = TimeInterval(hours: 72)
             let remaining = progress.percentComplete * nominalPodLife
             let expiration = Date(timeIntervalSinceNow: remaining)
-            hudView.pumpStatusHUD.setExpiration(text: podExpirationFormatter.string(from: expiration))
+            // Date over time, matching the sensor side
+            hudView.pumpStatusHUD.setExpiration(text: expirationDateFormatter.string(from: expiration) + "\n" + expirationTimeFormatter.string(from: expiration))
         } else {
             hudView.pumpStatusHUD.setExpiration(text: nil)
         }
@@ -2544,6 +2552,10 @@ final class StatusTableViewController: LoopChartsTableViewController {
             configureCGMManagerHUDViews()
 
             // when HUD view is initialized, update loop completion HUD (e.g., icon and last loop completed)
+            // Equal halves for the sensor and pump sides, so their lifecycle bars and
+            // text zones match in width
+            hudView.cgmStatusHUD.widthAnchor.constraint(equalTo: hudView.pumpStatusHUD.widthAnchor).isActive = true
+
             hudView.loopCompletionHUD.stateColors = .loopStatus
             hudView.loopCompletionHUD.loopIconClosed = automaticDosingStatus.automaticDosingEnabled
             hudView.loopCompletionHUD.lastLoopCompleted = deviceManager.loopManager.lastLoopCompleted
