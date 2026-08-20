@@ -70,6 +70,10 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
         for constraint in constraints where constraint.firstItem === statusStackView && constraint.firstAttribute == .trailing {
             constraint.constant = 0
         }
+
+        // The pod graphic is drawn centered within a wider view; shift the text into
+        // that empty margin so it hugs the visible pod like the sensor text hugs its icon
+        expirationLabel.transform = CGAffineTransform(translationX: 9, y: 0)
     }
     
     public override init(frame: CGRect) {
