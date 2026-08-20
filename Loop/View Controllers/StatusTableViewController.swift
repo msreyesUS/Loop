@@ -847,7 +847,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
     private lazy var expirationDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MMM-dd"
+        formatter.dateFormat = "MMM d, yyyy"
         return formatter
     }()
 
