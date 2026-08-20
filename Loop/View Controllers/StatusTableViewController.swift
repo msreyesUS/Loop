@@ -845,28 +845,19 @@ final class StatusTableViewController: LoopChartsTableViewController {
         return formatter
     }()
 
-    private lazy var expirationDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, yyyy"
-        return formatter
-    }()
-
-    private lazy var expirationTimeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .none
-        formatter.timeStyle = .short
-        return formatter
-    }()
-
-    /// Shows the pod expiration in the pump pill, derived from the lifecycle progress.
-    /// The pod's progress reports the REMAINING fraction of its 72-hour nominal life.
+    /// Shows the time remaining until pod expiration in the pump pill, derived from the
+    /// lifecycle progress. The pod's progress reports the REMAINING fraction of its
+    /// 72-hour nominal life. Units zero out rather than drop as time drains,
+    /// e.g. "0 days\n0 hrs 52 min".
     private func updatePodExpiration(on hudView: StatusBarHUDView) {
         if let progress = deviceManager.pumpLifecycleProgress, progress.percentComplete > 0 {
             let nominalPodLife = TimeInterval(hours: 72)
             let remaining = progress.percentComplete * nominalPodLife
-            let expiration = Date(timeIntervalSinceNow: remaining)
-            // Date over time, matching the sensor side
-            hudView.pumpStatusHUD.setExpiration(text: expirationDateFormatter.string(from: expiration) + "\n" + expirationTimeFormatter.string(from: expiration))
+            let totalMinutes = Int(remaining / 60)
+            let days = totalMinutes / (24 * 60)
+            let hours = (totalMinutes % (24 * 60)) / 60
+            let minutes = totalMinutes % 60
+            hudView.pumpStatusHUD.setExpiration(text: "\(days) days\n\(hours) hrs \(minutes) min")
         } else {
             hudView.pumpStatusHUD.setExpiration(text: nil)
         }
