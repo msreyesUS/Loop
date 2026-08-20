@@ -35,14 +35,12 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
         label.font = .systemFont(ofSize: 16, weight: .semibold)
         label.textColor = .label
         label.numberOfLines = 2
-        label.textAlignment = .center
+        // The text hugs the pod icon, mirroring the sensor side's icon-hugging text
+        label.textAlignment = .right
         label.adjustsFontSizeToFitWidth = true
         label.minimumScaleFactor = 0.8
         label.isHidden = true
-        // Stretch to fill the space next to the pump HUD so the text centers within it
         label.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        // Optical centering: nudged slightly trailing within its space
-        label.transform = CGAffineTransform(translationX: 5, y: 0)
         return label
     }()
 

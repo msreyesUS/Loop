@@ -1096,9 +1096,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 tableView.reloadRows(at: [statusIndexPath], with: animated ? .fade : .none)
             }
         case (false, true):
-            tableView.insertRows(at: [statusIndexPath], with: animated ? .bottom : .none)
+            tableView.insertRows(at: [statusIndexPath], with: animated ? .fade : .none)
         case (true, false):
-            tableView.deleteRows(at: [statusIndexPath], with: animated ? .top : .none)
+            tableView.deleteRows(at: [statusIndexPath], with: animated ? .fade : .none)
         default:
             break
         }
@@ -1109,9 +1109,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
             tableView.deleteRows(at: [IndexPath(row: oldOverrideRow, section: Section.status.rawValue)], with: .none)
             tableView.insertRows(at: [IndexPath(row: newOverrideRow, section: Section.status.rawValue)], with: .none)
         case (false, true):
-            tableView.insertRows(at: [IndexPath(row: newOverrideRow, section: Section.status.rawValue)], with: animated ? .bottom : .none)
+            tableView.insertRows(at: [IndexPath(row: newOverrideRow, section: Section.status.rawValue)], with: animated ? .fade : .none)
         case (true, false):
-            tableView.deleteRows(at: [IndexPath(row: oldOverrideRow, section: Section.status.rawValue)], with: animated ? .top : .none)
+            tableView.deleteRows(at: [IndexPath(row: oldOverrideRow, section: Section.status.rawValue)], with: animated ? .fade : .none)
         case (false, false):
             break
         }
@@ -1651,9 +1651,18 @@ final class StatusTableViewController: LoopChartsTableViewController {
             fatalError("init(coder:) has not been implemented")
         }
 
-        @objc private func bolusTapped() { onBolus?() }
-        @objc private func carbsTapped() { onCarbs?() }
-        @objc private func presetTapped() { onPreset?() }
+        @objc private func bolusTapped() {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            onBolus?()
+        }
+        @objc private func carbsTapped() {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            onCarbs?()
+        }
+        @objc private func presetTapped() {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            onPreset?()
+        }
     }
 
     private class SecondaryActionsTableViewCell: UITableViewCell {
@@ -1749,9 +1758,18 @@ final class StatusTableViewController: LoopChartsTableViewController {
             }
         }
 
-        @objc private func preMealTapped() { onPreMeal?() }
-        @objc private func suspendTapped() { onSuspend?() }
-        @objc private func settingsTapped() { onSettings?() }
+        @objc private func preMealTapped() {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onPreMeal?()
+        }
+        @objc private func suspendTapped() {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onSuspend?()
+        }
+        @objc private func settingsTapped() {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onSettings?()
+        }
     }
 
     private class AlertPermissionsDisabledWarningCell: UITableViewCell {
