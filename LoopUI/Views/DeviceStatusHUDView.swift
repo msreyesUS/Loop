@@ -29,6 +29,9 @@ import LoopKitUI
         didSet {
             progressView.isHidden = true
             progressView.tintColor = .systemGray
+            // A faint track keeps the line running the full width of the pill even
+            // as the colored remaining portion drains away
+            progressView.trackTintColor = UIColor.systemGray4.withAlphaComponent(0.5)
             // round the edges of the progress view
             progressView.layer.cornerRadius = 2
             progressView.clipsToBounds = true

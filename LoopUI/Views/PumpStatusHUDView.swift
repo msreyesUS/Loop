@@ -32,7 +32,8 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
     /// styled to match the status highlight message
     public let expirationLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 16, weight: .semibold)
+        // Matches the status screen's card title font ("Glucose – Last 3 Hours")
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
         label.textColor = .label
         label.numberOfLines = 2
         // The text hugs the pod icon, mirroring the sensor side's icon-hugging text
@@ -62,6 +63,12 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
             statusStackView.insertArrangedSubview(expirationLabel, at: basalIndex + 1)
         } else {
             statusStackView.addArrangedSubview(expirationLabel)
+        }
+
+        // Pull the pod (and the text hugging it) toward the outer edge so its
+        // padding mirrors the sensor icon's on the far side
+        for constraint in constraints where constraint.firstItem === statusStackView && constraint.firstAttribute == .trailing {
+            constraint.constant = 0
         }
     }
     

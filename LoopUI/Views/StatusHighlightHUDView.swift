@@ -58,8 +58,8 @@ public class StatusHighlightHUDView: UIView, NibLoadable {
         stackView.translatesAutoresizingMaskIntoConstraints = false
         self.addSubview(stackView)
 
-        // Matches the status screen's card title weight
-        messageLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        // Matches the status screen's card title font ("Glucose – Last 3 Hours")
+        messageLabel.font = .systemFont(ofSize: 13, weight: .semibold)
 
         // The stack fills the container; the centered message label stretches to
         // occupy the space beside the icon, so its text centers within that space

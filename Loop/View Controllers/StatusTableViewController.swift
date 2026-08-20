@@ -847,7 +847,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
     private lazy var expirationDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.setLocalizedDateFormatFromTemplate("MMMd")
+        formatter.dateFormat = "yyyy-MMM-dd"
         return formatter
     }()
 
@@ -1072,59 +1072,117 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
         hudView?.cgmStatusHUD?.isVisible = hudIsVisible
 
-        tableView.beginUpdates()
-        
-        updateBannerRow(animated: animated)
+        // Status rows fade in and out strictly in place: all row changes are applied
+        // without movement (the spacer above the actions absorbs the height change
+        // within the same frame, so the buttons never shift), outgoing rows fade away
+        // via a snapshot left at their old position, and incoming rows fade in.
+        var fadeOutSnapshots: [UIView] = []
+        var fadeInRows: [IndexPath] = []
 
-        switch (hudWasVisible, hudIsVisible) {
-        case (false, true):
-            tableView.insertRows(at: [IndexPath(row: 0, section: Section.hud.rawValue)], with: animated ? .top : .none)
-        case (true, false):
-            tableView.deleteRows(at: [IndexPath(row: 0, section: Section.hud.rawValue)], with: animated ? .top : .none)
-        default:
-            break
+        func snapshotRowForFadeOut(at indexPath: IndexPath) {
+            guard animated,
+                  let cell = tableView.cellForRow(at: indexPath),
+                  let snapshot = cell.snapshotView(afterScreenUpdates: false) else {
+                return
+            }
+            snapshot.frame = cell.frame
+            fadeOutSnapshots.append(snapshot)
         }
 
         let statusIndexPath = IndexPath(row: StatusRow.status.rawValue, section: Section.status.rawValue)
+        let oldOverrideIndexPath = IndexPath(row: oldOverrideRow, section: Section.status.rawValue)
+        let newOverrideIndexPath = IndexPath(row: newOverrideRow, section: Section.status.rawValue)
 
-        switch (statusWasVisible, statusIsVisible) {
-        case (true, true):
-            switch (oldStatusRowMode, self.statusRowMode) {
-            case (.enactingBolus, .enactingBolus):
-                break
-            case (.bolusing(let oldDose), .bolusing(let newDose)):
-                if oldDose.syncIdentifier != newDose.syncIdentifier {
-                    tableView.reloadRows(at: [statusIndexPath], with: animated ? .fade : .none)
-                }
-            case (.pumpSuspended(resuming: let wasResuming), .pumpSuspended(resuming: let isResuming)):
-                if isResuming != wasResuming {
-                    tableView.reloadRows(at: [statusIndexPath], with: animated ? .fade : .none)
-                }
-            default:
-                tableView.reloadRows(at: [statusIndexPath], with: animated ? .fade : .none)
-            }
-        case (false, true):
-            tableView.insertRows(at: [statusIndexPath], with: animated ? .fade : .none)
-        case (true, false):
-            tableView.deleteRows(at: [statusIndexPath], with: animated ? .fade : .none)
+        let statusNeedsReload: Bool
+        switch (oldStatusRowMode, self.statusRowMode) {
+        case (.enactingBolus, .enactingBolus):
+            statusNeedsReload = false
+        case (.bolusing(let oldDose), .bolusing(let newDose)):
+            statusNeedsReload = oldDose.syncIdentifier != newDose.syncIdentifier
+        case (.pumpSuspended(resuming: let wasResuming), .pumpSuspended(resuming: let isResuming)):
+            statusNeedsReload = isResuming != wasResuming
         default:
-            break
+            statusNeedsReload = true
         }
 
-        // Secondary override row (deletes address the old index space, inserts the new)
-        switch (overrideWasVisible, overrideIsVisible) {
-        case (true, true):
-            tableView.deleteRows(at: [IndexPath(row: oldOverrideRow, section: Section.status.rawValue)], with: .none)
-            tableView.insertRows(at: [IndexPath(row: newOverrideRow, section: Section.status.rawValue)], with: .none)
-        case (false, true):
-            tableView.insertRows(at: [IndexPath(row: newOverrideRow, section: Section.status.rawValue)], with: animated ? .fade : .none)
-        case (true, false):
-            tableView.deleteRows(at: [IndexPath(row: oldOverrideRow, section: Section.status.rawValue)], with: animated ? .fade : .none)
-        case (false, false):
-            break
+        // Snapshots must be taken while the outgoing cells are still on screen
+        if statusWasVisible && (!statusIsVisible || statusNeedsReload) {
+            snapshotRowForFadeOut(at: statusIndexPath)
+        }
+        if overrideWasVisible && !overrideIsVisible {
+            snapshotRowForFadeOut(at: oldOverrideIndexPath)
         }
 
-        tableView.endUpdates()
+        UIView.performWithoutAnimation {
+            tableView.beginUpdates()
+
+            updateBannerRow(animated: false)
+
+            switch (hudWasVisible, hudIsVisible) {
+            case (false, true):
+                tableView.insertRows(at: [IndexPath(row: 0, section: Section.hud.rawValue)], with: .none)
+            case (true, false):
+                tableView.deleteRows(at: [IndexPath(row: 0, section: Section.hud.rawValue)], with: .none)
+            default:
+                break
+            }
+
+            switch (statusWasVisible, statusIsVisible) {
+            case (true, true):
+                if statusNeedsReload {
+                    tableView.reloadRows(at: [statusIndexPath], with: .none)
+                    fadeInRows.append(statusIndexPath)
+                }
+            case (false, true):
+                tableView.insertRows(at: [statusIndexPath], with: .none)
+                fadeInRows.append(statusIndexPath)
+            case (true, false):
+                tableView.deleteRows(at: [statusIndexPath], with: .none)
+            default:
+                break
+            }
+
+            // Secondary override row (deletes address the old index space, inserts the new)
+            switch (overrideWasVisible, overrideIsVisible) {
+            case (true, true):
+                tableView.deleteRows(at: [oldOverrideIndexPath], with: .none)
+                tableView.insertRows(at: [newOverrideIndexPath], with: .none)
+            case (false, true):
+                tableView.insertRows(at: [newOverrideIndexPath], with: .none)
+                fadeInRows.append(newOverrideIndexPath)
+            case (true, false):
+                tableView.deleteRows(at: [oldOverrideIndexPath], with: .none)
+            case (false, false):
+                break
+            }
+
+            tableView.endUpdates()
+
+            // Settle the new row heights and re-balance the bottom spacer within the
+            // same frame so the action buttons hold their position
+            tableView.layoutIfNeeded()
+            updateActionsBottomSpacer()
+            tableView.layoutIfNeeded()
+        }
+
+        guard animated else { return }
+
+        for indexPath in fadeInRows {
+            guard let cell = tableView.cellForRow(at: indexPath) else { continue }
+            cell.alpha = 0
+            UIView.animate(withDuration: 0.3) {
+                cell.alpha = 1
+            }
+        }
+
+        for snapshot in fadeOutSnapshots {
+            tableView.addSubview(snapshot)
+            UIView.animate(withDuration: 0.25, animations: {
+                snapshot.alpha = 0
+            }, completion: { _ in
+                snapshot.removeFromSuperview()
+            })
+        }
     }
 
     // MARK: - Toolbar data
