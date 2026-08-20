@@ -73,7 +73,7 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
 
         // The pod graphic is drawn centered within a wider view; shift the text into
         // that empty margin so it hugs the visible pod like the sensor text hugs its icon
-        expirationLabel.transform = CGAffineTransform(translationX: 9, y: 0)
+        expirationLabel.transform = CGAffineTransform(translationX: 20, y: 0)
     }
     
     public override init(frame: CGRect) {
