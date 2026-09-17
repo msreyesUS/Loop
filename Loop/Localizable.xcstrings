@@ -20613,6 +20613,9 @@
         }
       }
     },
+    "Glucose Now" : {
+      "comment" : "The title of the status screen glucose hero card"
+    },
     "Glucose Target Range Schedule" : {
       "comment" : "Details for configuration error when glucose target range schedule is missing",
       "localizations" : {
@@ -26474,6 +26477,9 @@
           }
         }
       }
+    },
+    "More" : {
+      "comment" : "The label of the more actions button"
     },
     "More Info" : {
       "comment" : "Text for more info action on notification of upcoming TestFlight expiration\nText for more info action on notification of upcoming profile expiration",

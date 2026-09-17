@@ -60,6 +60,8 @@ public class StatusHighlightHUDView: UIView, NibLoadable {
 
         // Matches the status screen's card title font ("Glucose – Last 3 Hours")
         messageLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        // Same muted tone as the hero card's "Eventually …" caption
+        messageLabel.textColor = .secondaryLabel
 
         // The stack fills the container; the centered message label stretches to
         // occupy the space beside the icon, so its text centers within that space

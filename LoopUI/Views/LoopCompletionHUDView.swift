@@ -339,6 +339,44 @@ public final class StatusHeroView: UIView {
         return label
     }()
 
+    private let headerTitleLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 20, weight: .bold)
+        label.textColor = .label
+        return label
+    }()
+
+    private let headerUnitLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 15)
+        label.textColor = .secondaryLabel
+        return label
+    }()
+
+    private lazy var infoButton: UIButton = {
+        let button = UIButton(type: .system)
+        let configuration = UIImage.SymbolConfiguration(pointSize: 20, weight: .regular)
+        button.setImage(UIImage(systemName: "info.circle", withConfiguration: configuration), for: .normal)
+        button.tintColor = .secondaryLabel
+        button.accessibilityLabel = LocalizedString("More Info", comment: "Accessibility label for the status hero card info button")
+        button.addTarget(self, action: #selector(infoButtonWasTapped), for: .touchUpInside)
+        return button
+    }()
+
+    /// The card header title shown in the top-left corner (e.g. "Glucose Now")
+    public var headerTitle: String? {
+        didSet {
+            headerTitleLabel.text = headerTitle
+        }
+    }
+
+    /// Called when the info button in the top-right corner is tapped
+    public var infoButtonTapped: (() -> Void)?
+
+    @objc private func infoButtonWasTapped() {
+        infoButtonTapped?()
+    }
+
     /// A ring around the glucose reading, colored by range: green in range, red low,
     /// yellow high, neutral when there is no current reading. Drawn as a filled
     /// annulus so its outer contour can flow smoothly into the trend bulge.
@@ -444,11 +482,17 @@ public final class StatusHeroView: UIView {
         glucoseLabel.translatesAutoresizingMaskIntoConstraints = false
         infoStack.translatesAutoresizingMaskIntoConstraints = false
         eventualGlucoseLabel.translatesAutoresizingMaskIntoConstraints = false
+        headerTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        headerUnitLabel.translatesAutoresizingMaskIntoConstraints = false
+        infoButton.translatesAutoresizingMaskIntoConstraints = false
 
         addSubview(loopCompletionHUD)
         addSubview(glucoseLabel)
         addSubview(infoStack)
         addSubview(eventualGlucoseLabel)
+        addSubview(headerTitleLabel)
+        addSubview(headerUnitLabel)
+        addSubview(infoButton)
 
         // The bottom constraint yields (999) rather than conflicting with the temporary
         // UIView-Encapsulated-Layout-Height constraint during table view self-sizing;
@@ -459,6 +503,17 @@ public final class StatusHeroView: UIView {
         bottomConstraint.priority = UILayoutPriority(999)
 
         NSLayoutConstraint.activate([
+            // Card header: title and unit in the top-left corner, info button in the top-right
+            headerTitleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            headerTitleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 14),
+            headerTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: infoButton.leadingAnchor, constant: -8),
+            headerUnitLabel.leadingAnchor.constraint(equalTo: headerTitleLabel.leadingAnchor),
+            headerUnitLabel.topAnchor.constraint(equalTo: headerTitleLabel.bottomAnchor, constant: 2),
+            infoButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            infoButton.centerYAnchor.constraint(equalTo: headerTitleLabel.centerYAnchor),
+            infoButton.widthAnchor.constraint(equalToConstant: 40),
+            infoButton.heightAnchor.constraint(equalToConstant: 40),
+
             loopCompletionHUD.widthAnchor.constraint(equalToConstant: LayoutConstants.ringDiameter),
             loopCompletionHUD.heightAnchor.constraint(equalTo: loopCompletionHUD.widthAnchor),
             loopCompletionHUD.centerXAnchor.constraint(equalTo: centerXAnchor),
@@ -670,6 +725,8 @@ public final class StatusHeroView: UIView {
         }
         infoLabel.text = viewModel.unitsString
         infoLabel.textColor = isLowState ? .white : .secondaryLabel
+        // The header caption mirrors the display unit shown inside the disc
+        headerUnitLabel.text = viewModel.unitsString
 
         // Reposition the ring's trend arrow for the new trend
         setNeedsLayout()

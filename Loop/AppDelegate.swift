@@ -24,9 +24,51 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, WindowProvider {
 
         log.default("lastPathComponent = %{public}@", String(describing: Bundle.main.appStoreReceiptURL?.lastPathComponent))
 
+        self.launchOptions = launchOptions
+        // Initialization continues in sceneWindowConnected(_:) once SceneDelegate has a window
+        return true
+    }
+
+    /// Held until the scene connects; under the scene life cycle the window doesn't
+    /// exist yet at didFinishLaunching, and LoopAppManager needs it to launch.
+    private var launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+
+    // MARK: - Scene life cycle (forwarded by SceneDelegate)
+
+    /// Completes launch once the scene's storyboard-instantiated window is available.
+    /// This is the same point in the legacy life cycle where didFinishLaunching ran,
+    /// relative to window availability.
+    func sceneWindowConnected(_ window: UIWindow?) {
+        log.default(#function)
+
+        self.window = window
         loopAppManager.initialize(windowProvider: self, launchOptions: launchOptions)
+        launchOptions = nil
         loopAppManager.launch()
-        return loopAppManager.isLaunchComplete
+    }
+
+    func sceneDidBecomeActive() {
+        log.default(#function)
+
+        loopAppManager.didBecomeActive()
+    }
+
+    func sceneWillEnterForeground() {
+        log.default(#function)
+
+        loopAppManager.askUserToConfirmLoopReset()
+    }
+
+    func handleOpenURL(_ url: URL) -> Bool {
+        log.default(#function)
+
+        return loopAppManager.handle(url)
+    }
+
+    func handleUserActivity(_ userActivity: NSUserActivity) {
+        log.default(#function)
+
+        _ = loopAppManager.userActivity(userActivity, restorationHandler: { _ in })
     }
 
     // MARK: - UIApplicationDelegate - Life Cycle

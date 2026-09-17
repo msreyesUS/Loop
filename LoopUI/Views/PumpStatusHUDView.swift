@@ -34,7 +34,8 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
         let label = UILabel()
         // Matches the status screen's card title font ("Glucose – Last 3 Hours")
         label.font = .systemFont(ofSize: 13, weight: .semibold)
-        label.textColor = .label
+        // Same muted tone as the hero card's "Eventually …" caption
+        label.textColor = .secondaryLabel
         label.numberOfLines = 2
         // The text hugs the pod icon, mirroring the sensor side's icon-hugging text
         label.textAlignment = .right

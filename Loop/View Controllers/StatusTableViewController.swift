@@ -101,9 +101,12 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
         super.viewDidLoad()
 
+        // Buttons in the table respond to touch-down immediately instead of after
+        // the scroll view's ~150ms touch delay
+        tableView.delaysContentTouches = false
+
         tableView.register(HeroStatusTableViewCell.self, forCellReuseIdentifier: HeroStatusTableViewCell.className)
         tableView.register(PrimaryActionsTableViewCell.self, forCellReuseIdentifier: PrimaryActionsTableViewCell.className)
-        tableView.register(SecondaryActionsTableViewCell.self, forCellReuseIdentifier: SecondaryActionsTableViewCell.className)
         tableView.register(GlucoseChartTableViewCell.self, forCellReuseIdentifier: GlucoseChartTableViewCell.className)
         tableView.register(StatsTableViewCell.self, forCellReuseIdentifier: StatsTableViewCell.className)
         tableView.register(BolusProgressTableViewCell.nib(), forCellReuseIdentifier: BolusProgressTableViewCell.className)
@@ -327,31 +330,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
         cell.onBolus = { [weak self] in self?.presentBolusScreen() }
         cell.onCarbs = { [weak self] in self?.userTappedAddCarbs() }
-        cell.onPreset = { [weak self] in self?.presentCustomPresets(confirm: false) }
+        cell.onMore = { [weak self] in self?.presentMoreActions() }
+        cell.onSettings = { [weak self] in self?.presentSettings() }
 
         cell.bolusButton.isEnabled = isPumpOnboarded
         cell.carbsButton.isEnabled = isPumpOnboarded
-        cell.presetButton.isEnabled = workoutModeAllowed
-
-        // While a preset is active, the button reads pressed-in: a border in the
-        // button's blue around a lighter fill, with the content in the blue
-        let presetActive = workoutMode == true
-        let presetColor = UIColor(named: "infoAccent") ?? .systemBlue
-        if var config = cell.presetButton.configuration {
-            if presetActive {
-                config.baseBackgroundColor = Self.blend(presetColor, with: .systemBackground, fraction: 0.75)
-                config.baseForegroundColor = presetColor
-                config.background.strokeColor = presetColor
-                config.background.strokeWidth = 2.5
-            } else {
-                config.baseBackgroundColor = presetColor
-                config.baseForegroundColor = .white
-                config.background.strokeColor = nil
-                config.background.strokeWidth = 0
-            }
-            cell.presetButton.configuration = config
-        }
-        cell.presetButton.tintColor = presetColor
     }
 
     /// Blends two colors, resolving dynamic colors for the current appearance
@@ -368,23 +351,57 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
     }
 
-    private func configureSecondaryActionsCell(_ cell: SecondaryActionsTableViewCell) {
+    /// The sheet presented by the MORE button, holding the pre-meal, suspend, and
+    /// preset actions that no longer live on the main screen
+    private weak var moreActionsViewController: MoreActionsViewController?
+
+    private func configureMoreActions(_ vc: MoreActionsViewController) {
         let isPumpOnboarded = onboardingManager.isComplete || deviceManager.pumpManager?.isOnboarded == true
 
-        cell.onPreMeal = { [weak self] in self?.togglePreMealMode(confirm: false) }
-        cell.onSuspend = { [weak self] in self?.presentSuspendInsulinConfirmation() }
-        cell.onSettings = { [weak self] in self?.presentSettings() }
+        vc.setPreMeal(selected: preMealMode == true && preMealModeAllowed, enabled: preMealModeAllowed)
+        vc.setPreset(active: workoutMode == true, enabled: workoutModeAllowed)
+        vc.suspendButton.isEnabled = isPumpOnboarded && !(basalDeliveryState?.isSuspended ?? true)
+    }
 
-        cell.setPreMeal(selected: preMealMode == true && preMealModeAllowed, enabled: preMealModeAllowed)
-        cell.suspendButton.isEnabled = isPumpOnboarded && !(basalDeliveryState?.isSuspended ?? true)
+    private func presentMoreActions() {
+        let vc = MoreActionsViewController()
+
+        // Each action dismisses the sheet first so any follow-up alert or screen
+        // can be presented from this view controller
+        vc.onPreMeal = { [weak self] in self?.dismissMoreActions { self?.togglePreMealMode(confirm: false) } }
+        vc.onSuspend = { [weak self] in self?.dismissMoreActions { self?.presentSuspendInsulinConfirmation() } }
+        vc.onPreset = { [weak self] in self?.dismissMoreActions { self?.presentCustomPresets(confirm: false) } }
+
+        configureMoreActions(vc)
+
+        vc.modalPresentationStyle = .pageSheet
+        if let sheet = vc.sheetPresentationController {
+            if #available(iOS 16.0, *) {
+                sheet.detents = [.custom { _ in 260 }]
+            } else {
+                sheet.detents = [.medium()]
+            }
+            sheet.prefersGrabberVisible = true
+        }
+
+        moreActionsViewController = vc
+        present(vc, animated: true)
+    }
+
+    private func dismissMoreActions(then action: @escaping () -> Void) {
+        if let vc = moreActionsViewController, vc.presentingViewController != nil {
+            vc.dismiss(animated: true, completion: action)
+        } else {
+            action()
+        }
     }
 
     private func updateActionButtons() {
         if let cell = tableView.cellForRow(at: IndexPath(row: ActionsRow.primary.rawValue, section: Section.actions.rawValue)) as? PrimaryActionsTableViewCell {
             configurePrimaryActionsCell(cell)
         }
-        if let cell = tableView.cellForRow(at: IndexPath(row: ActionsRow.secondary.rawValue, section: Section.actions.rawValue)) as? SecondaryActionsTableViewCell {
-            configureSecondaryActionsCell(cell)
+        if let vc = moreActionsViewController {
+            configureMoreActions(vc)
         }
     }
 
@@ -762,17 +779,21 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 let unit = self.deviceManager.displayGlucosePreference.unit
                 self.chartHistoricalGlucose = glucoseSamples.map { ($0.startDate, $0.quantity.doubleValue(for: unit)) }
                 self.chartTargetRange = Self.chartInRangeBand.lowerBound.doubleValue(for: unit)...Self.chartInRangeBand.upperBound.doubleValue(for: unit)
-                let displayBound = LoopConstants.glucoseChartDefaultDisplayRangeWide
+                let displayBound = Self.chartDisplayBand
                 self.chartDisplayRange = displayBound.lowerBound.doubleValue(for: unit)...displayBound.upperBound.doubleValue(for: unit)
+                self.chartGridValues = Self.chartGridValues(for: unit)
                 self.updateChartCell()
             }
 
-            // Show/hide the table view rows
+            self.tableView.endUpdates()
+
+            // Show/hide the table view rows. This must stay OUTSIDE the batch above:
+            // nested beginUpdates defer the row changes to the outer endUpdates, which
+            // commits them with the default slide animation — bouncing the action
+            // buttons — and prevents the in-place fade from finding its cells.
             let statusRowMode = self.determineStatusRowMode()
 
             self.updateBannerAndHUDandStatusRows(statusRowMode: statusRowMode, newSize: currentContext.newSize, animated: animated)
-
-            self.tableView.endUpdates()
 
             self.reloading = false
             let reloadNow = !self.refreshContext.isEmpty
@@ -800,7 +821,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
     private enum ActionsRow: Int, CaseIterable {
         case primary = 0
-        case secondary
     }
 
     // MARK: - Status Metrics Data
@@ -834,9 +854,25 @@ final class StatusTableViewController: LoopChartsTableViewController {
     private static let chartInRangeBand =
         HKQuantity(unit: .milligramsPerDeciliter, doubleValue: 70)...HKQuantity(unit: .milligramsPerDeciliter, doubleValue: 180)
 
+    /// The chart's fixed vertical domain, 2.0–22.2 mmol/L, so the in-range band sits
+    /// well clear of the bottom edge and readings up to sensor limits stay on-chart
+    private static let chartDisplayBand =
+        HKQuantity(unit: .millimolesPerLiter, doubleValue: 2.0)...HKQuantity(unit: .millimolesPerLiter, doubleValue: 22.2)
+
+    /// Values (in the display unit) marked by faint dotted gridlines with labels along
+    /// the chart's left edge
+    private static func chartGridValues(for unit: HKUnit) -> [Double] {
+        if unit == .millimolesPerLiter {
+            return Array(stride(from: 2.0, through: 22.0, by: 4.0))
+        } else {
+            return Array(stride(from: 50.0, through: 400.0, by: 50.0))
+        }
+    }
+
     private var chartHistoricalGlucose: [(date: Date, value: Double)] = []
     private var chartTargetRange: ClosedRange<Double>?
     private var chartDisplayRange: ClosedRange<Double>?
+    private var chartGridValues: [Double] = []
 
     private lazy var bolusTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -1011,7 +1047,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
     private func configureChartCell(_ cell: GlucoseChartTableViewCell) {
         cell.titleLabel.text = NSLocalizedString("Glucose – Last 3 Hours", comment: "The title of the status screen glucose chart card")
         cell.unitLabel.text = deviceManager.displayGlucosePreference.unit.localizedShortUnitString
-        cell.chartView.setData(historical: chartHistoricalGlucose, predicted: [], targetRange: chartTargetRange, displayRange: chartDisplayRange)
+        cell.chartView.setData(historical: chartHistoricalGlucose, predicted: [], targetRange: chartTargetRange, displayRange: chartDisplayRange, gridValues: chartGridValues)
     }
 
     private func updateChartCell() {
@@ -1327,6 +1363,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         private var predicted: [(date: Date, value: Double)] = []
         private var targetRange: ClosedRange<Double>?
         private var displayRange: ClosedRange<Double>?
+        private var gridValues: [Double] = []
 
         private lazy var axisTimeFormatter: DateFormatter = {
             let formatter = DateFormatter()
@@ -1353,11 +1390,12 @@ final class StatusTableViewController: LoopChartsTableViewController {
             fatalError("init(coder:) has not been implemented")
         }
 
-        func setData(historical: [(date: Date, value: Double)], predicted: [(date: Date, value: Double)], targetRange: ClosedRange<Double>?, displayRange: ClosedRange<Double>?) {
+        func setData(historical: [(date: Date, value: Double)], predicted: [(date: Date, value: Double)], targetRange: ClosedRange<Double>?, displayRange: ClosedRange<Double>?, gridValues: [Double] = []) {
             self.historical = historical.sorted { $0.date < $1.date }
             self.predicted = predicted.sorted { $0.date < $1.date }
             self.targetRange = targetRange
             self.displayRange = displayRange
+            self.gridValues = gridValues
             setNeedsDisplay()
         }
 
@@ -1368,9 +1406,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
         override func draw(_ rect: CGRect) {
             let axisHeight: CGFloat = 14
-            // Reserve a right-hand gutter for the range value labels
+            // Reserve a right-hand gutter for the range value labels and a left-hand
+            // gutter for the gridline labels
             let valueAxisWidth: CGFloat = 30
-            let drawRect = CGRect(x: bounds.minX + 2, y: bounds.minY + 4, width: bounds.width - valueAxisWidth - 4, height: bounds.height - axisHeight - 8)
+            let leftAxisWidth: CGFloat = gridValues.isEmpty ? 0 : 24
+            let drawRect = CGRect(x: bounds.minX + leftAxisWidth + 2, y: bounds.minY + 4, width: bounds.width - leftAxisWidth - valueAxisWidth - 6, height: bounds.height - axisHeight - 8)
 
             let all = historical + predicted
             let minDate = all.map(\.date).min() ?? Date(timeIntervalSinceNow: -TimeInterval(hours: 3))
@@ -1391,7 +1431,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 valueMin = min(valueMin, targetRange.lowerBound)
                 valueMax = max(valueMax, targetRange.upperBound)
             }
-            let padding = max((valueMax - valueMin) * 0.05, 0.2)
+            // Keep the padding tight so the fixed domain edges (2.0 and 22.2) stay
+            // close to the chart edges and the outermost gridlines remain visible
+            let padding = max((valueMax - valueMin) * 0.02, 0.1)
             valueMin -= padding
             valueMax += padding
             let valueSpan = valueMax - valueMin
@@ -1404,6 +1446,29 @@ final class StatusTableViewController: LoopChartsTableViewController {
             }
             func point(for sample: (date: Date, value: Double)) -> CGPoint {
                 CGPoint(x: x(for: sample.date), y: y(for: sample.value))
+            }
+
+            // Faint dotted horizontal gridlines with their values along the left edge
+            let gridColor = UIColor.tertiaryLabel.resolvedColor(with: traitCollection)
+            let gridLabelAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.monospacedDigitSystemFont(ofSize: 9, weight: .regular),
+                .foregroundColor: gridColor,
+            ]
+            for value in gridValues where value >= valueMin && value <= valueMax {
+                let lineY = y(for: value)
+                let linePath = UIBezierPath()
+                linePath.move(to: CGPoint(x: drawRect.minX, y: lineY))
+                linePath.addLine(to: CGPoint(x: drawRect.maxX, y: lineY))
+                linePath.lineWidth = 0.5
+                linePath.setLineDash([2, 3], count: 2, phase: 0)
+                gridColor.withAlphaComponent(0.6).setStroke()
+                linePath.stroke()
+
+                guard let text = axisValueFormatter.string(from: NSNumber(value: value)) else { continue }
+                let label = text as NSString
+                let size = label.size(withAttributes: gridLabelAttributes)
+                let labelY = min(max(lineY - size.height / 2, bounds.minY), bounds.maxY - size.height)
+                label.draw(at: CGPoint(x: drawRect.minX - size.width - 4, y: labelY), withAttributes: gridLabelAttributes)
             }
 
             // Target range band
@@ -1456,6 +1521,34 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
             // History line and endpoint dot, in the palette's info accent
             let lineColor = (UIColor(named: "infoAccent") ?? .systemBlue).resolvedColor(with: traitCollection)
+
+            // Soft gradient shading under the history line, fading downward. The fill's
+            // floor is the target band's top edge, so shading only appears where the
+            // line rises above the green section.
+            if historical.count > 1, let context = UIGraphicsGetCurrentContext() {
+                let shadeFloor = targetRange.map { y(for: $0.upperBound) } ?? drawRect.maxY
+                let areaPath = path(for: historical)
+                areaPath.addLine(to: CGPoint(x: point(for: historical[historical.count - 1]).x, y: shadeFloor))
+                areaPath.addLine(to: CGPoint(x: point(for: historical[0]).x, y: shadeFloor))
+                areaPath.close()
+
+                context.saveGState()
+                // Constrain to above the floor so stretches where the line dips into
+                // the band contribute no fill
+                context.clip(to: CGRect(x: drawRect.minX, y: drawRect.minY, width: drawRect.width, height: max(0, shadeFloor - drawRect.minY)))
+                areaPath.addClip()
+                let shadeTop = historical.map { y(for: $0.value) }.min() ?? drawRect.minY
+                let shadeColors = [lineColor.withAlphaComponent(0.22).cgColor,
+                                   lineColor.withAlphaComponent(0.0).cgColor] as CFArray
+                if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: shadeColors, locations: [0, 1]) {
+                    context.drawLinearGradient(gradient,
+                                               start: CGPoint(x: 0, y: shadeTop),
+                                               end: CGPoint(x: 0, y: shadeFloor),
+                                               options: [])
+                }
+                context.restoreGState()
+            }
+
             if historical.count > 1 {
                 let historyPath = path(for: historical)
                 historyPath.lineWidth = 2
@@ -1540,7 +1633,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 chartView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
                 chartView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
                 chartView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6),
-                chartView.heightAnchor.constraint(equalToConstant: 92),
+                chartView.heightAnchor.constraint(equalToConstant: 150),
                 chartView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -10),
 
                 cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
@@ -1632,51 +1725,118 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
     }
 
-    private class PrimaryActionsTableViewCell: UITableViewCell {
-        var onBolus: (() -> Void)?
-        var onCarbs: (() -> Void)?
-        var onPreset: (() -> Void)?
+    /// The prominent filled style shared by the bottom action row and the MORE sheet
+    private static func makeActionButton(title: String, image: UIImage?, color: UIColor, fontSize: CGFloat = 15, imagePlacement: NSDirectionalRectEdge = .top) -> UIButton {
+        // Flat filled style everywhere — no Liquid Glass: its gradient sheen and
+        // springy press animation read as lag and gradient on the buttons
+        var config: UIButton.Configuration = .filled()
+        config.cornerStyle = .large
+        config.baseForegroundColor = .white
+        config.baseBackgroundColor = color
+        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 4, bottom: 8, trailing: 4)
 
-        let bolusButton: UIButton
-        let carbsButton: UIButton
-        let presetButton: UIButton
-
-        private static func makeButton(title: String, image: UIImage?, color: UIColor) -> UIButton {
-            var config: UIButton.Configuration
-            if #available(iOS 26.0, *) {
-                // Colored Liquid Glass with white content, like the reference design
-                config = .prominentGlass()
-            } else {
-                config = .filled()
-            }
-            var attributedTitle = AttributedString(title)
-            attributedTitle.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
-            config.attributedTitle = attributedTitle
-            config.image = image?.withRenderingMode(.alwaysTemplate)
-            config.imagePlacement = .top
-            config.imagePadding = 5
-            config.cornerStyle = .large
-            config.baseForegroundColor = .white
-            config.baseBackgroundColor = color
-            config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
+        if imagePlacement == .top {
+            // UIButton's own image-above-title layout pixel-floors the image's x origin,
+            // leaving the icon a hair left of center at fractional button widths. Bypass
+            // it: content is our own stack pinned to the button's exact center.
             let button = UIButton(configuration: config)
             button.tintColor = color
-            button.heightAnchor.constraint(greaterThanOrEqualToConstant: 56).isActive = true
+            button.heightAnchor.constraint(greaterThanOrEqualToConstant: 64).isActive = true
+
+            let iconView = UIImageView(image: image?.withRenderingMode(.alwaysTemplate))
+            iconView.tintColor = .white
+            iconView.contentMode = .center
+
+            let label = UILabel()
+            label.text = title
+            label.font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
+            label.textColor = .white
+            label.textAlignment = .center
+
+            let content = UIStackView(arrangedSubviews: [iconView, label])
+            content.axis = .vertical
+            content.alignment = .center
+            content.spacing = 5
+            content.isUserInteractionEnabled = false
+            content.translatesAutoresizingMaskIntoConstraints = false
+            button.addSubview(content)
+            NSLayoutConstraint.activate([
+                content.centerXAnchor.constraint(equalTo: button.centerXAnchor),
+                content.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+                content.widthAnchor.constraint(lessThanOrEqualTo: button.widthAnchor, constant: -16),
+            ])
+
+            // Custom subviews don't follow the configuration's disabled dimming
+            button.configurationUpdateHandler = { button in
+                content.alpha = button.isEnabled ? 1.0 : 0.4
+            }
             return button
         }
 
+        // With an attributed title, the button derives its title alignment from the string's
+        // paragraph style (default: leading), overriding titleAlignment — center it explicitly
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+        config.attributedTitle = AttributedString(NSAttributedString(string: title, attributes: [
+            .font: UIFont.systemFont(ofSize: fontSize, weight: .semibold),
+            .paragraphStyle: paragraphStyle,
+        ]))
+        config.image = image?.withRenderingMode(.alwaysTemplate)
+        config.imagePlacement = imagePlacement
+        config.imagePadding = 8
+        config.titleAlignment = .center
+        let button = UIButton(configuration: config)
+        button.tintColor = color
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 56).isActive = true
+        return button
+    }
+
+    /// Restyles an action button between its normal filled look and a pressed-in
+    /// "active" look: a border in the button's color around a lighter fill, with
+    /// the content in the color
+    private static func setActionButton(_ button: UIButton, color: UIColor, active: Bool) {
+        guard var config = button.configuration else { return }
+        if active {
+            config.baseBackgroundColor = blend(color, with: .systemBackground, fraction: 0.75)
+            config.baseForegroundColor = color
+            config.background.strokeColor = color
+            config.background.strokeWidth = 2.5
+        } else {
+            config.baseBackgroundColor = color
+            config.baseForegroundColor = .white
+            config.background.strokeColor = nil
+            config.background.strokeWidth = 0
+        }
+        button.configuration = config
+        button.tintColor = color
+    }
+
+    private class PrimaryActionsTableViewCell: UITableViewCell {
+        var onBolus: (() -> Void)?
+        var onCarbs: (() -> Void)?
+        var onMore: (() -> Void)?
+        var onSettings: (() -> Void)?
+
+        let bolusButton: UIButton
+        let carbsButton: UIButton
+        let moreButton: UIButton
+        let settingsButton: UIButton
+
         override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
             // Distinct palette colors: slate for the primary action, success green for
-            // carbs, info blue for presets
-            bolusButton = Self.makeButton(title: NSLocalizedString("Bolus", comment: "The label of the bolus action button"),
-                                          image: UIImage(named: "bolus"),
-                                          color: UIColor(named: "primaryButton1") ?? .systemTeal)
-            carbsButton = Self.makeButton(title: NSLocalizedString("Carbs", comment: "The label of the carb entry action button"),
-                                          image: UIImage(named: "carbs"),
-                                          color: .freshColor)
-            presetButton = Self.makeButton(title: NSLocalizedString("Preset", comment: "The label of the preset action button"),
-                                           image: UIImage.workoutImage(selected: false),
-                                           color: UIColor(named: "infoAccent") ?? .systemBlue)
+            // carbs, info blue for more, lighter slate for settings
+            bolusButton = StatusTableViewController.makeActionButton(title: NSLocalizedString("Bolus", comment: "The label of the bolus action button"),
+                                                                     image: UIImage(named: "bolus"),
+                                                                     color: UIColor(named: "primaryButton1") ?? .systemTeal)
+            carbsButton = StatusTableViewController.makeActionButton(title: NSLocalizedString("Carbs", comment: "The label of the carb entry action button"),
+                                                                     image: UIImage(named: "carbs"),
+                                                                     color: .freshColor)
+            moreButton = StatusTableViewController.makeActionButton(title: NSLocalizedString("More", comment: "The label of the more actions button"),
+                                                                    image: UIImage(systemName: "ellipsis.circle"),
+                                                                    color: UIColor(named: "infoAccent") ?? .systemBlue)
+            settingsButton = StatusTableViewController.makeActionButton(title: NSLocalizedString("Settings", comment: "The label of the settings action button"),
+                                                                        image: UIImage(systemName: "gearshape"),
+                                                                        color: UIColor(named: "primaryButton3") ?? .systemGray)
 
             super.init(style: style, reuseIdentifier: reuseIdentifier)
 
@@ -1685,16 +1845,17 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
             bolusButton.addTarget(self, action: #selector(bolusTapped), for: .touchUpInside)
             carbsButton.addTarget(self, action: #selector(carbsTapped), for: .touchUpInside)
-            presetButton.addTarget(self, action: #selector(presetTapped), for: .touchUpInside)
+            moreButton.addTarget(self, action: #selector(moreTapped), for: .touchUpInside)
+            settingsButton.addTarget(self, action: #selector(settingsTapped), for: .touchUpInside)
 
-            let stack = UIStackView(arrangedSubviews: [bolusButton, carbsButton, presetButton])
+            let stack = UIStackView(arrangedSubviews: [bolusButton, carbsButton, moreButton, settingsButton])
             stack.axis = .horizontal
             stack.distribution = .fillEqually
-            stack.spacing = 12
+            stack.spacing = 10
             stack.translatesAutoresizingMaskIntoConstraints = false
 
             contentView.addSubview(stack)
-            let bottomConstraint = stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4)
+            let bottomConstraint = stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10)
             bottomConstraint.priority = UILayoutPriority(999)
             NSLayoutConstraint.activate([
                 stack.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
@@ -1716,95 +1877,67 @@ final class StatusTableViewController: LoopChartsTableViewController {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             onCarbs?()
         }
-        @objc private func presetTapped() {
+        @objc private func moreTapped() {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            onPreset?()
+            onMore?()
+        }
+        @objc private func settingsTapped() {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            onSettings?()
         }
     }
 
-    private class SecondaryActionsTableViewCell: UITableViewCell {
+    /// The sheet behind the MORE button: full-width pre-meal, suspend, and preset
+    /// buttons in the same prominent style as the bottom action row
+    private final class MoreActionsViewController: UIViewController {
         var onPreMeal: (() -> Void)?
         var onSuspend: (() -> Void)?
-        var onSettings: (() -> Void)?
+        var onPreset: (() -> Void)?
 
-        let preMealButton: UIButton
-        let suspendButton: UIButton
-        let settingsButton: UIButton
+        static let preMealColor: UIColor = .freshColor
+        static let suspendColor: UIColor = UIColor(named: "primaryButton2") ?? .systemGray
+        static let presetColor = UIColor(named: "infoAccent") ?? .systemBlue
 
-        private let capsuleContainer = StatusTableViewController.makeCardView()
+        let preMealButton = StatusTableViewController.makeActionButton(title: NSLocalizedString("Pre-Meal", comment: "The label of the pre-meal action button"),
+                                                                       image: UIImage.preMealImage(selected: false),
+                                                                       color: preMealColor,
+                                                                       fontSize: 17,
+                                                                       imagePlacement: .leading)
+        let suspendButton = StatusTableViewController.makeActionButton(title: NSLocalizedString("Suspend", comment: "The label of the suspend insulin delivery action button"),
+                                                                       image: UIImage(systemName: "pause.circle"),
+                                                                       color: suspendColor,
+                                                                       fontSize: 17,
+                                                                       imagePlacement: .leading)
+        let presetButton = StatusTableViewController.makeActionButton(title: NSLocalizedString("Preset", comment: "The label of the preset action button"),
+                                                                      image: UIImage.workoutImage(selected: false),
+                                                                      color: presetColor,
+                                                                      fontSize: 17,
+                                                                      imagePlacement: .leading)
 
-        private static func makeButton(title: String, image: UIImage?, color: UIColor) -> UIButton {
-            var config = UIButton.Configuration.plain()
-            var attributedTitle = AttributedString(title)
-            attributedTitle.font = UIFont.systemFont(ofSize: 12, weight: .medium)
-            config.attributedTitle = attributedTitle
-            config.image = image?.withRenderingMode(.alwaysTemplate)
-            config.imagePlacement = .top
-            config.imagePadding = 4
-            config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 20, weight: .regular)
-            config.baseForegroundColor = color
-            config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 4, bottom: 10, trailing: 4)
-            return UIButton(configuration: config)
-        }
+        override func viewDidLoad() {
+            super.viewDidLoad()
 
-        override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
-            // One uniform slate color across all three items, matching the reference design
-            let itemColor = SecondaryActionsTableViewCell.itemColor
-            preMealButton = Self.makeButton(title: NSLocalizedString("Pre-Meal", comment: "The label of the pre-meal action button"),
-                                            image: UIImage.preMealImage(selected: false),
-                                            color: itemColor)
-            suspendButton = Self.makeButton(title: NSLocalizedString("Suspend", comment: "The label of the suspend insulin delivery action button"),
-                                            image: UIImage(systemName: "pause.circle"),
-                                            color: itemColor)
-            settingsButton = Self.makeButton(title: NSLocalizedString("Settings", comment: "The label of the settings action button"),
-                                             image: UIImage(systemName: "gearshape"),
-                                             color: itemColor)
-
-            super.init(style: style, reuseIdentifier: reuseIdentifier)
-
-            selectionStyle = .none
-            backgroundColor = .clear
+            view.backgroundColor = .systemBackground
 
             preMealButton.addTarget(self, action: #selector(preMealTapped), for: .touchUpInside)
             suspendButton.addTarget(self, action: #selector(suspendTapped), for: .touchUpInside)
-            settingsButton.addTarget(self, action: #selector(settingsTapped), for: .touchUpInside)
+            presetButton.addTarget(self, action: #selector(presetTapped), for: .touchUpInside)
 
-            let stack = UIStackView(arrangedSubviews: [preMealButton, suspendButton, settingsButton])
-            stack.axis = .horizontal
-            stack.distribution = .fillEqually
+            let stack = UIStackView(arrangedSubviews: [preMealButton, suspendButton, presetButton])
+            stack.axis = .vertical
+            stack.spacing = 12
             stack.translatesAutoresizingMaskIntoConstraints = false
 
-            // One continuous floating bar containing all three items, using the same
-            // translucent card material and corner rounding as the rest of the screen
-            capsuleContainer.addSubview(stack)
-
-            contentView.addSubview(capsuleContainer)
-            let bottomConstraint = capsuleContainer.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10)
-            bottomConstraint.priority = UILayoutPriority(999)
+            view.addSubview(stack)
             NSLayoutConstraint.activate([
-                stack.leadingAnchor.constraint(equalTo: capsuleContainer.leadingAnchor),
-                stack.trailingAnchor.constraint(equalTo: capsuleContainer.trailingAnchor),
-                stack.topAnchor.constraint(equalTo: capsuleContainer.topAnchor),
-                stack.bottomAnchor.constraint(equalTo: capsuleContainer.bottomAnchor),
-
-                capsuleContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-                capsuleContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-                capsuleContainer.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
-                capsuleContainer.heightAnchor.constraint(equalToConstant: 64),
-                bottomConstraint,
+                stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+                stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+                stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 28),
             ])
         }
 
-        required init?(coder: NSCoder) {
-            fatalError("init(coder:) has not been implemented")
-        }
-
-        static let itemColor = UIColor(named: "secondaryAction") ?? .secondaryLabel
-
         func setPreMeal(selected: Bool, enabled: Bool) {
-            // Keep the outline icon in both states; only the color signals the toggle.
-            // The filled "selected" asset reads as inverted on glass.
-            preMealButton.configuration?.baseForegroundColor = selected ? .freshColor : Self.itemColor
+            StatusTableViewController.setActionButton(preMealButton, color: Self.preMealColor, active: selected)
             preMealButton.isEnabled = enabled
             if selected {
                 preMealButton.accessibilityTraits.insert(.selected)
@@ -1815,6 +1948,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
             }
         }
 
+        func setPreset(active: Bool, enabled: Bool) {
+            StatusTableViewController.setActionButton(presetButton, color: Self.presetColor, active: active)
+            presetButton.isEnabled = enabled
+        }
+
         @objc private func preMealTapped() {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             onPreMeal?()
@@ -1823,9 +1961,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             onSuspend?()
         }
-        @objc private func settingsTapped() {
+        @objc private func presetTapped() {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            onSettings?()
+            onPreset?()
         }
     }
 
@@ -2074,11 +2212,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 configurePrimaryActionsCell(cell)
 
                 return cell
-            case .secondary:
-                let cell = tableView.dequeueReusableCell(withIdentifier: SecondaryActionsTableViewCell.className, for: indexPath) as! SecondaryActionsTableViewCell
-                configureSecondaryActionsCell(cell)
-
-                return cell
             }
         }
     }
@@ -2293,7 +2426,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
             let bolusEntryView = SimpleBolusView(viewModel: viewModel).environmentObject(deviceManager.displayGlucosePreference)
             let hostingController = DismissibleHostingController(rootView: bolusEntryView, isModalInPresentation: false)
             navigationWrapper = UINavigationController(rootViewController: hostingController)
-            hostingController.navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: navigationWrapper, action: #selector(dismissWithAnimation))
+            // A titled item renders as the word "Cancel"; the system .cancel item draws as an X on iOS 26+
+            hostingController.navigationItem.leftBarButtonItem = UIBarButtonItem(title: NSLocalizedString("Cancel", comment: "Button label for cancel"), style: .plain, target: navigationWrapper, action: #selector(dismissWithAnimation))
             present(navigationWrapper, animated: true)
         } else {
             let viewModel = CarbEntryViewModel(delegate: deviceManager)
@@ -2352,7 +2486,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
         )
         
         let navigationWrapper = UINavigationController(rootViewController: hostingController)
-        hostingController.navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: navigationWrapper, action: #selector(dismissWithAnimation))
+        // A titled item renders as the word "Cancel"; the system .cancel item draws as an X on iOS 26+
+        hostingController.navigationItem.leftBarButtonItem = UIBarButtonItem(title: NSLocalizedString("Cancel", comment: "Button label for cancel"), style: .plain, target: navigationWrapper, action: #selector(dismissWithAnimation))
         present(navigationWrapper, animated: true)
         deviceManager.analyticsServicesManager.didDisplayBolusScreen()
     }
@@ -2574,6 +2709,12 @@ final class StatusTableViewController: LoopChartsTableViewController {
             heroStatusView.loopCompletionHUD.loopIconClosed = automaticDosingStatus.automaticDosingEnabled
             heroStatusView.loopCompletionHUD.closedLoopDisallowedLocalizedDescription = deviceManager.closedLoopDisallowedLocalizedDescription
             heroStatusView.loopCompletionHUD.lastLoopCompleted = deviceManager.loopManager.lastLoopCompleted
+
+            heroStatusView.headerTitle = NSLocalizedString("Glucose Now", comment: "The title of the status screen glucose hero card")
+            heroStatusView.infoButtonTapped = { [weak self] in
+                // Opens the insulin delivery history (all boluses and doses)
+                self?.performSegue(withIdentifier: InsulinDeliveryTableViewController.className, sender: nil)
+            }
 
             refreshContext.update(with: .status)
             log.debug("[reloadData] after heroStatusView loaded")
