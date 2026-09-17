@@ -42,10 +42,6 @@ struct CarbEntryView: View, HorizontalSizeClassOverride {
                         ToolbarItem(placement: .navigationBarLeading) {
                             dismissButton
                         }
-                        
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            continueButton
-                        }
                     }
                 
             }

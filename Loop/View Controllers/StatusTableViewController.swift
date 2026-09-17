@@ -963,9 +963,10 @@ final class StatusTableViewController: LoopChartsTableViewController {
         return .hidden
     }
 
-    /// The status row mode backing a given row of the status section
+    /// The status row mode backing a given row of the status section.
+    /// Row 0 is always the primary slot (possibly .hidden); row 1 is the override row.
     private func statusRowMode(forRow row: Int) -> StatusRowMode {
-        if statusRowMode.hasRow && row == 0 {
+        if row == 0 {
             return statusRowMode
         }
         return overrideStatusRowMode
@@ -1079,7 +1080,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
     private func updateBannerAndHUDandStatusRows(statusRowMode: StatusRowMode, newSize: CGSize?, animated: Bool) {
         let hudWasVisible = self.shouldShowHUD
-        let statusWasVisible = !landscapeMode && self.statusRowMode.hasRow
+        // The primary status row is a permanent slot in portrait; only rotation
+        // inserts or deletes it
+        let statusWasVisible = !landscapeMode
         let overrideWasVisible = !landscapeMode && self.overrideStatusRowMode.hasRow
         let oldOverrideRow = statusWasVisible ? 1 : 0
 
@@ -1093,7 +1096,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
 
         let hudIsVisible = self.shouldShowHUD
-        let statusIsVisible = !landscapeMode && self.statusRowMode.hasRow
+        let statusIsVisible = !landscapeMode
         let overrideIsVisible = !landscapeMode && self.overrideStatusRowMode.hasRow
         let newOverrideRow = statusIsVisible ? 1 : 0
 
@@ -1122,6 +1125,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
         let statusNeedsReload: Bool
         switch (oldStatusRowMode, self.statusRowMode) {
+        case (.hidden, .hidden):
+            statusNeedsReload = false
         case (.enactingBolus, .enactingBolus):
             statusNeedsReload = false
         case (.bolusing(let oldDose), .bolusing(let newDose)):
@@ -1271,10 +1276,23 @@ final class StatusTableViewController: LoopChartsTableViewController {
             guard !landscapeMode else {
                 return 0
             }
-            return (statusRowMode.hasRow ? 1 : 0) + (overrideStatusRowMode.hasRow ? 1 : 0)
+            // The primary status row is a permanent fixed-height slot (invisible when
+            // .hidden) so cards fade in and out of it without reflowing the layout —
+            // the action buttons below never move
+            return 1 + (overrideStatusRowMode.hasRow ? 1 : 0)
         case .actions:
             return ActionsRow.allCases.count
         }
+    }
+
+    override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        // Status cards swap between cell types of different natural heights (e.g. the
+        // 44pt bolus progress nib vs 58pt title/subtitle cards); a fixed height keeps
+        // the slot — and the action buttons below it — from shifting between modes
+        if Section(rawValue: indexPath.section) == .status {
+            return 58
+        }
+        return UITableView.automaticDimension
     }
 
     /// The card border color: the system separator, heavily softened
@@ -2102,7 +2120,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
             switch statusRowMode(forRow: indexPath.row) {
                 case .hidden:
+                    // The permanent slot's idle state: fully invisible placeholder
                     let cell = getTitleSubtitleCell()
+                    cell.backgroundConfiguration = UIBackgroundConfiguration.clear()
                     return cell
                 case .scheduleOverrideEnabled(let override):
                     let cell = getTitleSubtitleCell()
