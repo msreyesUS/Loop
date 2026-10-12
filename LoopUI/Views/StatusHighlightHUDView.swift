@@ -33,6 +33,7 @@ public class StatusHighlightHUDView: UIView, NibLoadable {
             case .left:
                 stackView.addArrangedSubview(icon)
                 stackView.addArrangedSubview(messageLabel)
+                // The message hugs its icon so both device pills mirror each other
                 messageLabel.textAlignment = .left
             case .right:
                 stackView.addArrangedSubview(messageLabel)
@@ -57,7 +58,13 @@ public class StatusHighlightHUDView: UIView, NibLoadable {
         stackView.translatesAutoresizingMaskIntoConstraints = false
         self.addSubview(stackView)
 
-        // Use AutoLayout to have the stack view fill its entire container.
+        // Matches the status screen's card title font ("Glucose – Last 3 Hours")
+        messageLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        // Same muted tone as the hero card's "Eventually …" caption
+        messageLabel.textColor = .secondaryLabel
+
+        // The stack fills the container; the centered message label stretches to
+        // occupy the space beside the icon, so its text centers within that space
         NSLayoutConstraint.activate([
             stackView.centerXAnchor.constraint(equalTo: centerXAnchor),
             stackView.centerYAnchor.constraint(equalTo: centerYAnchor),

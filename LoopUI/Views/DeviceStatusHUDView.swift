@@ -25,10 +25,13 @@ import LoopKitUI
         }
     }
     
-    @IBOutlet private weak var progressView: UIProgressView! {
+    @IBOutlet weak var progressView: UIProgressView! {
         didSet {
             progressView.isHidden = true
             progressView.tintColor = .systemGray
+            // A faint track keeps the line running the full width of the pill even
+            // as the colored remaining portion drains away
+            progressView.trackTintColor = UIColor.systemGray4.withAlphaComponent(0.5)
             // round the edges of the progress view
             progressView.layer.cornerRadius = 2
             progressView.clipsToBounds = true
@@ -37,11 +40,43 @@ import LoopKitUI
         }
     }
     
+    /// The system separator heavily softened, matching the status screen's cards
+    private var borderColor: CGColor {
+        let resolved = UIColor.separator.resolvedColor(with: traitCollection)
+        return resolved.withAlphaComponent(resolved.cgColor.alpha * 0.35).cgColor
+    }
+
+    /// Hides the pill's own background, for hosts that provide a shared card behind
+    /// multiple HUDs
+    public var showsBackground: Bool = true {
+        didSet {
+            backgroundView?.isHidden = !showsBackground
+        }
+    }
+
+    open override func awakeFromNib() {
+        super.awakeFromNib()
+
+        // Lift the lifecycle bar so it sits padded within the card rather than
+        // hugging its bottom edge
+        progressView.transform = CGAffineTransform(translationX: 0, y: -7)
+    }
+
     @IBOutlet private weak var backgroundView: UIView! {
         didSet {
-            backgroundView.backgroundColor = .systemBackground
+            // Translucent with a hairline border to match the status screen's cards
+            backgroundView.backgroundColor = .systemBackground.withAlphaComponent(0.62)
             backgroundView.layer.cornerRadius = 23
+            backgroundView.layer.borderWidth = 1
+            backgroundView.layer.borderColor = borderColor
         }
+    }
+
+    open override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+
+        // CGColors don't adapt automatically; re-resolve for the new appearance
+        backgroundView?.layer.borderColor = borderColor
     }
     
     @IBOutlet weak var statusStackView: UIStackView!

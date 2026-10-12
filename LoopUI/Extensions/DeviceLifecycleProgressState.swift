@@ -17,9 +17,9 @@ extension DeviceLifecycleProgressState {
         case .dimmed:
             return UIColor(Color.secondary)
         case .normalCGM:
-            return .glucose
+            return .pumpStatusNormal
         case .normalPump:
-            return .insulin
+            return .pumpStatusNormal
         case .warning:
             return .warning
         }

@@ -36,10 +36,11 @@ struct BolusEntryView: View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
                 List {
-                    self.chartSection
                     self.summarySection
+                    self.chartSection
                 }
                 .insetGroupedListStyle()
+                .compactCardSpacing()
                 
             }
             .navigationBarTitle(self.title)
@@ -490,5 +491,20 @@ struct LabelBackground: ViewModifier {
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .fill(Color(.systemGray6))
             )
+    }
+}
+
+private extension View {
+    /// Pulls the first card up toward the title and tightens the gap between cards.
+    /// The spacing APIs require iOS 17; earlier systems keep the default list spacing.
+    @ViewBuilder
+    func compactCardSpacing() -> some View {
+        if #available(iOS 17.0, *) {
+            self
+                .contentMargins(.top, 4, for: .scrollContent)
+                .listSectionSpacing(10)
+        } else {
+            self
+        }
     }
 }

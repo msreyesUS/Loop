@@ -2837,6 +2837,9 @@
         }
       }
     },
+    "More Info" : {
+      "comment" : "Accessibility label for the status hero card info button"
+    },
     "Needs attention" : {
       "comment" : "Accessibility label component for glucose HUD describing an invalid state",
       "localizations" : {

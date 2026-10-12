@@ -25,11 +25,63 @@ private extension RefreshContext {
     static let all: Set<RefreshContext> = [.status, .glucose, .insulin, .carbs, .targets]
 }
 
+/// A full-screen, static soft gradient behind the status table — a slight cool wash
+/// rather than flat white — giving the Liquid Glass controls content to refract.
+private final class GradientBackgroundView: UIView {
+
+    private static let topColor = UIColor(named: "statusBackgroundTop") ?? .secondarySystemBackground
+    private static let bottomColor = UIColor(named: "statusBackgroundBottom") ?? .secondarySystemBackground
+
+    private let gradientLayer: CAGradientLayer = {
+        let layer = CAGradientLayer()
+        layer.startPoint = CGPoint(x: 0.5, y: 0)
+        layer.endPoint = CGPoint(x: 0.5, y: 1)
+        return layer
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+
+        backgroundColor = .secondarySystemBackground
+        layer.addSublayer(gradientLayer)
+        updateColors()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradientLayer.frame = bounds
+        CATransaction.commit()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+
+        // CGColors don't adapt automatically; re-resolve for the new appearance
+        updateColors()
+    }
+
+    private func updateColors() {
+        gradientLayer.colors = [
+            Self.topColor.resolvedColor(with: traitCollection).cgColor,
+            Self.bottomColor.resolvedColor(with: traitCollection).cgColor,
+        ]
+    }
+}
+
 final class StatusTableViewController: LoopChartsTableViewController {
 
     private let log = OSLog(category: "StatusTableViewController")
 
     lazy var carbFormatter: QuantityFormatter = QuantityFormatter(for: .gram())
+
+    lazy var insulinFormatter: QuantityFormatter = QuantityFormatter(for: .internationalUnit())
 
     var onboardingManager: OnboardingManager!
 
@@ -48,18 +100,18 @@ final class StatusTableViewController: LoopChartsTableViewController {
     override func viewDidLoad() {
 
         super.viewDidLoad()
-        
-        setupToolbarItems()
-        
+
+        // Buttons in the table respond to touch-down immediately instead of after
+        // the scroll view's ~150ms touch delay
+        tableView.delaysContentTouches = false
+
+        tableView.register(HeroStatusTableViewCell.self, forCellReuseIdentifier: HeroStatusTableViewCell.className)
+        tableView.register(PrimaryActionsTableViewCell.self, forCellReuseIdentifier: PrimaryActionsTableViewCell.className)
+        tableView.register(GlucoseChartTableViewCell.self, forCellReuseIdentifier: GlucoseChartTableViewCell.className)
+        tableView.register(StatsTableViewCell.self, forCellReuseIdentifier: StatsTableViewCell.className)
         tableView.register(BolusProgressTableViewCell.nib(), forCellReuseIdentifier: BolusProgressTableViewCell.className)
         tableView.register(AlertPermissionsDisabledWarningCell.self, forCellReuseIdentifier: AlertPermissionsDisabledWarningCell.className)
         tableView.register(MuteAlertsWarningCell.self, forCellReuseIdentifier: MuteAlertsWarningCell.className)
-
-        if FeatureFlags.predictedGlucoseChartClampEnabled {
-            statusCharts.glucose.glucoseDisplayRange = LoopConstants.glucoseChartDefaultDisplayBoundClamped
-        } else {
-            statusCharts.glucose.glucoseDisplayRange = LoopConstants.glucoseChartDefaultDisplayBound
-        }
 
         registerPumpManager()
         registerCGMManager()
@@ -85,6 +137,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                     }
 
                     self?.hudView?.loopCompletionHUD.loopInProgress = false
+                    self?.heroStatusView?.loopCompletionHUD.loopInProgress = false
                     self?.log.debug("[reloadData] from notification with context %{public}@", String(describing: context))
                     self?.reloadData(animated: true)
                 }
@@ -94,20 +147,21 @@ final class StatusTableViewController: LoopChartsTableViewController {
             notificationCenter.addObserver(forName: .LoopRunning, object: deviceManager.loopManager, queue: nil) { [weak self] _ in
                 DispatchQueue.main.async {
                     self?.hudView?.loopCompletionHUD.loopInProgress = true
+                    self?.heroStatusView?.loopCompletionHUD.loopInProgress = true
                 }
             },
             notificationCenter.addObserver(forName: .PumpManagerChanged, object: deviceManager, queue: nil) { [weak self] (notification: Notification) in
                 DispatchQueue.main.async {
                     self?.registerPumpManager()
                     self?.configurePumpManagerHUDViews()
-                    self?.updateToolbarItems()
+                    self?.updateActionButtons()
                 }
             },
             notificationCenter.addObserver(forName: .CGMManagerChanged, object: deviceManager, queue: nil) { [weak self] (notification: Notification) in
                 DispatchQueue.main.async {
                     self?.registerCGMManager()
                     self?.configureCGMManagerHUDViews()
-                    self?.updateToolbarItems()
+                    self?.updateActionButtons()
                 }
             },
             notificationCenter.addObserver(forName: .PumpEventsAdded, object: deviceManager, queue: nil) { [weak self] (notification: Notification) in
@@ -133,10 +187,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             }
             .store(in: &cancellables)
 
-        if let gestureRecognizer = charts.gestureRecognizer {
-            tableView.addGestureRecognizer(gestureRecognizer)
-        }
-
+        tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 74
 
         // Estimate an initial value
@@ -145,7 +196,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
         addScenarioStepGestureRecognizers()
 
         tableView.backgroundColor = .secondarySystemBackground
-    
+        tableView.backgroundView = gradientBackgroundView
     }
 
     override func didReceiveMemoryWarning() {
@@ -162,9 +213,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
         super.viewWillAppear(animated)
 
         navigationController?.setNavigationBarHidden(true, animated: animated)
-        navigationController?.setToolbarHidden(false, animated: animated)
-        
-        updateToolbarItems()
+        navigationController?.setToolbarHidden(true, animated: animated)
+
+        updateActionButtons()
 
         alertPermissionsChecker.checkNow()
 
@@ -176,7 +227,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             .sink { [weak self] _ in
                 self?.refreshContext.update(with: .status)
                 self?.reloadData(animated: true)
-                self?.updateToolbarItems()
+                self?.updateActionButtons()
             }
             .store(in: &cancellables)
     }
@@ -224,6 +275,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
     override var active: Bool {
         didSet {
             hudView?.loopCompletionHUD.assertTimer(active)
+            heroStatusView?.loopCompletionHUD.assertTimer(active)
             updateHUDActive()
         }
     }
@@ -273,71 +325,107 @@ final class StatusTableViewController: LoopChartsTableViewController {
         deviceManager.pumpManagerHUDProvider?.visible = active && onscreen
     }
 
-    private lazy var carbsItem = makeToolbarItem(title: NSLocalizedString("Add Meal", comment: "The label of the carb entry button"), image: UIImage(named: "carbs"), tintColor: .carbTintColor, action: #selector(userTappedAddCarbs))
-    private lazy var bolusItem = makeToolbarItem(title: NSLocalizedString("Bolus", comment: "The label of the bolus entry button"), image: UIImage(named: "bolus"), tintColor: .insulinTintColor, action: #selector(presentBolusScreen))
-    private lazy var settingsItem = makeToolbarItem(title: NSLocalizedString("Settings", comment: "The label of the settings button"), image: UIImage(named: "settings"), tintColor: .secondaryLabel, action: #selector(onSettingsTapped))
-    private lazy var preMealItem = makeToolbarItem(title: NSLocalizedString("Pre-Meal Targets", comment: "The label of the pre-meal mode toggle button"), image: UIImage.preMealImage(selected: false), tintColor: .carbTintColor, action: #selector(premealButtonTapped(_:)))
-    private lazy var workoutItem = makeToolbarItem(title: NSLocalizedString("Workout Targets", comment: "The label of the workout mode toggle button"), image: UIImage.workoutImage(selected: false), tintColor: .glucoseTintColor, action: #selector(toggleWorkoutMode(_:)))
-
-    private func makeToolbarItem(title: String, image: UIImage?, tintColor: UIColor, action: Selector) -> UIBarButtonItem {
-        let item = UIBarButtonItem(image: image, style: .plain, target: self, action: action)
-        item.title = title
-        item.tintColor = tintColor
-        return item
-    }
-
-    private func setupToolbarItems() {
-        func flexibleSpace() -> UIBarButtonItem {
-            UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
-        }
-
-        if #available(iOS 26, *) {
-            toolbarItems = [carbsItem, preMealItem, bolusItem, workoutItem, settingsItem]
-        } else {
-            toolbarItems = [
-                carbsItem,
-                flexibleSpace(),
-                preMealItem,
-                flexibleSpace(),
-                bolusItem,
-                flexibleSpace(),
-                workoutItem,
-                flexibleSpace(),
-                settingsItem
-            ]
-        }
-#if compiler(>=6.4)
-        if #available(iOS 27, *) {
-            for item in [carbsItem, preMealItem, bolusItem, workoutItem, settingsItem] {
-                item.isPaddingRemoved = true
-            }
-            settingsItem.visibilityPriority = .high
-        }
-#endif
-    }
-
-    private func updateToolbarItems() {
+    private func configurePrimaryActionsCell(_ cell: PrimaryActionsTableViewCell) {
         let isPumpOnboarded = onboardingManager.isComplete || deviceManager.pumpManager?.isOnboarded == true
 
-        carbsItem.isEnabled = isPumpOnboarded
-        bolusItem.isEnabled = isPumpOnboarded
+        cell.onBolus = { [weak self] in self?.presentBolusScreen() }
+        cell.onCarbs = { [weak self] in self?.userTappedAddCarbs() }
+        cell.onMore = { [weak self] in self?.presentMoreActions() }
+        cell.onSettings = { [weak self] in self?.presentSettings() }
 
-        let preMealSelected = preMealMode == true && preMealModeAllowed
-        updateToggleItem(preMealItem, image: UIImage.preMealImage(selected: preMealSelected), selected: preMealSelected, isEnabled: preMealModeAllowed)
-        let workoutSelected = workoutMode == true && workoutModeAllowed
-        updateToggleItem(workoutItem, image: UIImage.workoutImage(selected: workoutSelected), selected: workoutSelected, isEnabled: workoutModeAllowed)
+        cell.bolusButton.isEnabled = isPumpOnboarded
+        cell.carbsButton.isEnabled = isPumpOnboarded
     }
 
-    private func updateToggleItem(_ item: UIBarButtonItem, image: UIImage?, selected: Bool, isEnabled: Bool) {
-        item.image = image
-        item.isEnabled = isEnabled
-        if selected {
-            item.accessibilityTraits.insert(.selected)
-            item.accessibilityHint = NSLocalizedString("Disables", comment: "The action hint of the workout mode toggle button when enabled")
-        } else {
-            item.accessibilityTraits.remove(.selected)
-            item.accessibilityHint = NSLocalizedString("Enables", comment: "The action hint of the workout mode toggle button when disabled")
+    /// Blends two colors, resolving dynamic colors for the current appearance
+    private static func blend(_ color: UIColor, with other: UIColor, fraction: CGFloat) -> UIColor {
+        UIColor { traits in
+            var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+            var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+            color.resolvedColor(with: traits).getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+            other.resolvedColor(with: traits).getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+            return UIColor(red: r1 + (r2 - r1) * fraction,
+                           green: g1 + (g2 - g1) * fraction,
+                           blue: b1 + (b2 - b1) * fraction,
+                           alpha: 1)
         }
+    }
+
+    /// The sheet presented by the MORE button, holding the pre-meal, suspend, and
+    /// preset actions that no longer live on the main screen
+    private weak var moreActionsViewController: MoreActionsViewController?
+
+    private func configureMoreActions(_ vc: MoreActionsViewController) {
+        let isPumpOnboarded = onboardingManager.isComplete || deviceManager.pumpManager?.isOnboarded == true
+
+        vc.setPreMeal(selected: preMealMode == true && preMealModeAllowed, enabled: preMealModeAllowed)
+        vc.setPreset(active: workoutMode == true, enabled: workoutModeAllowed)
+        vc.suspendButton.isEnabled = isPumpOnboarded && !(basalDeliveryState?.isSuspended ?? true)
+    }
+
+    private func presentMoreActions() {
+        let vc = MoreActionsViewController()
+
+        // Each action dismisses the sheet first so any follow-up alert or screen
+        // can be presented from this view controller
+        vc.onPreMeal = { [weak self] in self?.dismissMoreActions { self?.togglePreMealMode(confirm: false) } }
+        vc.onSuspend = { [weak self] in self?.dismissMoreActions { self?.presentSuspendInsulinConfirmation() } }
+        vc.onPreset = { [weak self] in self?.dismissMoreActions { self?.presentCustomPresets(confirm: false) } }
+
+        configureMoreActions(vc)
+
+        vc.modalPresentationStyle = .pageSheet
+        if let sheet = vc.sheetPresentationController {
+            if #available(iOS 16.0, *) {
+                sheet.detents = [.custom { _ in 260 }]
+            } else {
+                sheet.detents = [.medium()]
+            }
+            sheet.prefersGrabberVisible = true
+        }
+
+        moreActionsViewController = vc
+        present(vc, animated: true)
+    }
+
+    private func dismissMoreActions(then action: @escaping () -> Void) {
+        if let vc = moreActionsViewController, vc.presentingViewController != nil {
+            vc.dismiss(animated: true, completion: action)
+        } else {
+            action()
+        }
+    }
+
+    private func updateActionButtons() {
+        if let cell = tableView.cellForRow(at: IndexPath(row: ActionsRow.primary.rawValue, section: Section.actions.rawValue)) as? PrimaryActionsTableViewCell {
+            configurePrimaryActionsCell(cell)
+        }
+        if let vc = moreActionsViewController {
+            configureMoreActions(vc)
+        }
+    }
+
+    private func presentSuspendInsulinConfirmation() {
+        let alert = UIAlertController(
+            title: NSLocalizedString("Suspend Insulin Delivery?", comment: "The alert title for suspend insulin confirmation"),
+            message: NSLocalizedString("The pump will stop delivering insulin until you resume. Loop will not adjust your dosing while delivery is suspended.", comment: "The alert body for suspend insulin confirmation"),
+            preferredStyle: .alert
+        )
+        alert.addCancelAction()
+        alert.addAction(UIAlertAction(
+            title: NSLocalizedString("Suspend", comment: "The title of the action used to suspend insulin delivery"),
+            style: .destructive
+        ) { [weak self] _ in
+            self?.deviceManager.pumpManager?.suspendDelivery { (error) in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        let alert = UIAlertController(with: error, title: NSLocalizedString("Failed to Suspend Insulin Delivery", comment: "The alert title for a suspend error"))
+                        self?.present(alert, animated: true, completion: nil)
+                    }
+                }
+            }
+        })
+        present(alert, animated: true)
     }
 
     public var basalDeliveryState: PumpManagerStatus.BasalDeliveryState? = nil {
@@ -346,6 +434,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 log.debug("New basalDeliveryState: %@", String(describing: basalDeliveryState))
                 refreshContext.update(with: .status)
                 reloadData(animated: true)
+                updateActionButtons()
             }
         }
     }
@@ -363,15 +452,28 @@ final class StatusTableViewController: LoopChartsTableViewController {
         return !landscapeMode
     }
 
-    private var shouldShowStatus: Bool {
-        return !landscapeMode && statusRowMode.hasRow
-    }
 
     override func glucoseUnitDidChange() {
         log.debug("[reloadData] for HealthKit unit preference change")
         refreshContext = RefreshContext.all
     }
     
+    /// A benign status highlight shown in the CGM pill when the CGM has nothing to
+    /// report; the big glucose number already covers the reading, so the pill carries
+    /// sensor state instead. Real highlights (searching, warmup, signal loss) take
+    /// precedence via the existing mechanism.
+    private struct SensorOKStatusHighlight: DeviceStatusHighlight {
+        var localizedMessage: String {
+            NSLocalizedString("Sensor\nActive", comment: "Sensor status shown when the CGM has nothing to report")
+        }
+        var imageName: String {
+            "sensor.tag.radiowaves.forward"
+        }
+        var state: DeviceStatusHighlightState {
+            .normalCGM
+        }
+    }
+
     private func registerCGMManager() {
         deviceManager.cgmManager?.removeStatusObserver(self)
         deviceManager.cgmManager?.addStatusObserver(self, queue: .main)
@@ -384,28 +486,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
         deviceManager.pumpManager?.addStatusObserver(self, queue: .main)
     }
     
-    private lazy var statusCharts = StatusChartsManager(colors: .primary, settings: .default, traitCollection: traitCollection)
-
     override func createChartsManager() -> ChartsManager {
-        return statusCharts
-    }
-
-    private func updateChartDateRange() {
-        // How far back should we show data? Use the screen size as a guide.
-        let availableWidth = (refreshContext.newSize ?? tableView.bounds.size).width - charts.fixedHorizontalMargin
-
-        let totalHours = floor(Double(availableWidth / LoopConstants.minimumChartWidthPerHour))
-        let futureHours = ceil(deviceManager.doseStore.longestEffectDuration.hours)
-        let historyHours = max(LoopConstants.statusChartMinimumHistoryDisplay.hours, totalHours - futureHours)
-
-        let date = Date(timeIntervalSinceNow: -TimeInterval(hours: historyHours))
-        let chartStartDate = Calendar.current.nextDate(after: date, matching: DateComponents(minute: 0), matchingPolicy: .strict, direction: .backward) ?? date
-        if charts.startDate != chartStartDate {
-            refreshContext.formUnion(RefreshContext.all)
-        }
-        charts.startDate = chartStartDate
-        charts.maxEndDate = chartStartDate.addingTimeInterval(.hours(totalHours))
-        charts.updateEndDate(charts.maxEndDate)
+        // Charts have been removed from this screen; provide an empty manager to satisfy the base class.
+        return ChartsManager(colors: .primary, settings: .default, charts: [], traitCollection: traitCollection)
     }
 
     override func reloadData(animated: Bool = false) {
@@ -417,12 +500,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
         // This should be kept up to date immediately
         hudView?.loopCompletionHUD.lastLoopCompleted = deviceManager.loopManager.lastLoopCompleted
+        heroStatusView?.loopCompletionHUD.lastLoopCompleted = deviceManager.loopManager.lastLoopCompleted
 
         guard !reloading && !deviceManager.authorizationRequired else {
             return
         }
-
-        updateChartDateRange()
 
         if case .bolusing = statusRowMode, bolusProgressReporter?.progress.isComplete == true {
             refreshContext.update(with: .status)
@@ -436,7 +518,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
         guard active && visible && !refreshContext.isEmpty else {
             updateBannerRow(animated: animated)
-            redrawCharts()
             return
         }
 
@@ -451,11 +532,13 @@ final class StatusTableViewController: LoopChartsTableViewController {
         var glucoseSamples: [StoredGlucoseSample]?
         var predictedGlucoseValues: [GlucoseValue]?
         var iobValues: [InsulinValue]?
-        var doseEntries: [DoseEntry]?
-        var totalDelivery: Double?
         var cobValues: [CarbValue]?
         var carbsOnBoard: HKQuantity?
-        let startDate = charts.startDate
+        var newLastManualBolus: DoseEntry?
+        var lastManualBolusUpdated = false
+        var newLastCarbEntryDate: Date?
+        var lastCarbEntryUpdated = false
+        let startDate = Date(timeIntervalSinceNow: -LoopConstants.statusChartMinimumHistoryDisplay)
         let basalDeliveryState = self.basalDeliveryState
         let automaticDosingEnabled = automaticDosingStatus.automaticDosingEnabled
 
@@ -486,6 +569,13 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
                 if let netBasal = netBasal {
                     self.hudView?.pumpStatusHUD.basalRateHUD.setNetBasalRate(netBasal.rate, percent: netBasal.percent, at: netBasal.start)
+
+                    if let rateString = self.netBasalFormatter.string(from: netBasal.rate) {
+                        self.netBasalDescription = String(format: NSLocalizedString("%@ U", comment: "The format string describing the net basal rate. (1: localized basal rate value)"), rateString)
+                    } else {
+                        self.netBasalDescription = nil
+                    }
+                    self.netBasalStart = netBasal.start
                 }
             }
 
@@ -511,13 +601,27 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
         if currentContext.contains(.glucose) {
             reloadGroup.enter()
-            deviceManager.glucoseStore.getGlucoseSamples(start: startDate, end: nil) { (result) -> Void in
+            deviceManager.glucoseStore.getGlucoseSamples(start: Date(timeIntervalSinceNow: -Self.chartHistoryInterval), end: nil) { (result) -> Void in
                 switch result {
                 case .failure(let error):
                     self.log.error("Failure getting glucose samples: %{public}@", String(describing: error))
                     glucoseSamples = nil
                 case .success(let samples):
                     glucoseSamples = samples
+                }
+                reloadGroup.leave()
+            }
+        }
+
+        if currentContext.contains(.carbs) {
+            reloadGroup.enter()
+            deviceManager.carbStore.getCarbEntries(start: Date(timeIntervalSinceNow: -Self.lastManualBolusLookback), end: nil) { (result) in
+                switch result {
+                case .failure(let error):
+                    self.log.error("CarbStore failed to get carb entries: %{public}@", String(describing: error))
+                case .success(let entries):
+                    newLastCarbEntryDate = entries.map(\.startDate).max()
+                    lastCarbEntryUpdated = true
                 }
                 reloadGroup.leave()
             }
@@ -538,28 +642,17 @@ final class StatusTableViewController: LoopChartsTableViewController {
             }
 
             reloadGroup.enter()
-            deviceManager.doseStore.getNormalizedDoseEntries(start: startDate, end: nil) { (result) -> Void in
+            deviceManager.doseStore.getNormalizedDoseEntries(start: Date(timeIntervalSinceNow: -Self.lastManualBolusLookback), end: nil) { (result) -> Void in
                 switch result {
                 case .failure(let error):
-                    self.log.error("DoseStore failed to get normalized dose entries: %{public}@", String(describing: error))
+                    self.log.error("DoseStore failed to get dose entries for last bolus: %{public}@", String(describing: error))
                     retryContext.update(with: .insulin)
-                    doseEntries = []
                 case .success(let doses):
-                    doseEntries = doses
+                    newLastManualBolus = doses
+                        .filter { $0.type == .bolus && $0.automatic != true && !$0.isMutable }
+                        .max(by: { $0.startDate < $1.startDate })
+                    lastManualBolusUpdated = true
                 }
-                reloadGroup.leave()
-            }
-
-            reloadGroup.enter()
-            deviceManager.doseStore.getTotalUnitsDelivered(since: Calendar.current.startOfDay(for: Date())) { (result) in
-                switch result {
-                case .failure:
-                    retryContext.update(with: .insulin)
-                    totalDelivery = nil
-                case .success(let total):
-                    totalDelivery = total.value
-                }
-
                 reloadGroup.leave()
             }
         }
@@ -579,75 +672,49 @@ final class StatusTableViewController: LoopChartsTableViewController {
         }
 
         reloadGroup.notify(queue: .main) {
-            /// Update the chart data
-
-            // Glucose
-            if let glucoseSamples = glucoseSamples {
-                self.statusCharts.setGlucoseValues(glucoseSamples)
-            }
-            if (automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled), let predictedGlucoseValues = predictedGlucoseValues {
-                self.statusCharts.setPredictedGlucoseValues(predictedGlucoseValues)
-            } else {
-                self.statusCharts.setPredictedGlucoseValues([])
-            }
-            if !FeatureFlags.predictedGlucoseChartClampEnabled,
-                let lastPoint = self.statusCharts.glucose.predictedGlucosePoints.last?.y
+            // Eventual Glucose
+            if (automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled),
+                let eventualGlucose = predictedGlucoseValues?.last
             {
-                self.eventualGlucoseDescription = String(describing: lastPoint)
+                self.eventualGlucoseDescription = self.deviceManager.displayGlucosePreference.format(eventualGlucose.quantity)
             } else {
-                // if the predicted glucose values are clamped, the eventually glucose description should not be displayed, since it may not align with what is being charted.
                 self.eventualGlucoseDescription = nil
             }
-            if currentContext.contains(.targets) {
-                self.statusCharts.targetGlucoseSchedule = self.deviceManager.loopManager.settings.glucoseTargetRangeSchedule
-                self.statusCharts.preMealOverride = self.deviceManager.loopManager.settings.preMealOverride
-                self.statusCharts.scheduleOverride = self.deviceManager.loopManager.settings.scheduleOverride
-            }
-            if self.statusCharts.scheduleOverride?.hasFinished() == true {
-                self.statusCharts.scheduleOverride = nil
-            }
-
-            let charts = self.statusCharts
 
             // Active Insulin
-            if let iobValues = iobValues {
-                charts.setIOBValues(iobValues)
-            }
-
             // Show the larger of the value either before or after the current date
-            if let maxValue = charts.iob.iobPoints.allElementsAdjacent(to: Date()).max(by: {
-                return $0.y.scalar < $1.y.scalar
-            }) {
-                self.currentIOBDescription = String(describing: maxValue.y)
-            } else {
-                self.currentIOBDescription = nil
-            }
-
-            // Insulin Delivery
-            if let doseEntries = doseEntries {
-                charts.setDoseEntries(doseEntries)
-            }
-            if let totalDelivery = totalDelivery {
-                self.totalDelivery = totalDelivery
+            if let iobValues = iobValues {
+                if let currentIOB = iobValues.allElementsAdjacent(to: Date()).max(by: { $0.value < $1.value }) {
+                    self.currentIOBDescription = self.insulinFormatter.string(from: HKQuantity(unit: .internationalUnit(), doubleValue: currentIOB.value))
+                } else {
+                    self.currentIOBDescription = nil
+                }
             }
 
             // Active Carbohydrates
-            if let cobValues = cobValues {
-                charts.setCOBValues(cobValues)
-            }
-            if let index = charts.cob.cobPoints.closestIndex(priorTo: Date()) {
-                self.currentCOBDescription = String(describing: charts.cob.cobPoints[index].y)
+            if let currentCOB = cobValues?.closestPrior(to: Date()) {
+                self.currentCOBDescription = self.carbFormatter.string(from: currentCOB.quantity)
             } else if let carbsOnBoard = carbsOnBoard {
                 self.currentCOBDescription = self.carbFormatter.string(from: carbsOnBoard)
             } else {
                 self.currentCOBDescription = nil
             }
 
+            // Last Bolus
+            if lastManualBolusUpdated {
+                self.lastManualBolus = newLastManualBolus
+            }
+            if lastCarbEntryUpdated {
+                self.lastCarbEntryDate = newLastCarbEntryDate
+            }
+
+            self.updateStatsCell()
+
             self.tableView.beginUpdates()
             if let hudView = self.hudView {
                 // CGM Status
                 if let glucose = self.deviceManager.glucoseStore.latestGlucose {
-                    let unit = self.statusCharts.glucose.glucoseUnit
+                    let unit = self.deviceManager.displayGlucosePreference.unit
                     hudView.cgmStatusHUD.setGlucoseQuantity(glucose.quantity.doubleValue(for: unit),
                                                             at: glucose.startDate,
                                                             unit: unit,
@@ -656,7 +723,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                                                             wasUserEntered: glucose.wasUserEntered,
                                                             isDisplayOnly: glucose.isDisplayOnly)
                 }
-                hudView.cgmStatusHUD.presentStatusHighlight(self.deviceManager.cgmStatusHighlight)
+                hudView.cgmStatusHUD.presentStatusHighlight(self.deviceManager.cgmStatusHighlight ?? SensorOKStatusHighlight())
                 hudView.cgmStatusHUD.presentStatusBadge(self.deviceManager.cgmStatusBadge)
                 hudView.cgmStatusHUD.lifecycleProgress = self.deviceManager.cgmLifecycleProgress
 
@@ -664,16 +731,69 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 hudView.pumpStatusHUD.presentStatusHighlight(self.deviceManager.pumpStatusHighlight)
                 hudView.pumpStatusHUD.presentStatusBadge(self.deviceManager.pumpStatusBadge)
                 hudView.pumpStatusHUD.lifecycleProgress = self.deviceManager.pumpLifecycleProgress
+                self.updatePodExpiration(on: hudView)
             }
 
-            // Show/hide the table view rows
+            // Hero glucose display
+            if let heroStatusView = self.heroStatusView {
+                if let glucose = self.deviceManager.glucoseStore.latestGlucose {
+                    let unit = self.deviceManager.displayGlucosePreference.unit
+                    let glucoseDisplay = self.deviceManager.glucoseDisplay(for: glucose)
+                    heroStatusView.setGlucoseQuantity(glucose.quantity.doubleValue(for: unit),
+                                                      at: glucose.startDate,
+                                                      unit: unit,
+                                                      staleGlucoseAge: LoopCoreConstants.inputDataRecencyInterval,
+                                                      glucoseDisplay: glucoseDisplay,
+                                                      wasUserEntered: glucose.wasUserEntered,
+                                                      isDisplayOnly: glucose.isDisplayOnly)
+                    // Color the ring against the same in-range band the chart shows.
+                    // CGM-reported categories (sensor-limit LOW/HIGH) take precedence;
+                    // most CGMs don't report one, so fall back to comparing the reading
+                    // to the band: low is red, in range green, high yellow.
+                    if let cgmCategory = glucoseDisplay?.glucoseRangeCategory {
+                        heroStatusView.glucoseRangeCategory = cgmCategory
+                    } else {
+                        let mgdl = glucose.quantity.doubleValue(for: .milligramsPerDeciliter)
+                        if mgdl < Self.chartInRangeBand.lowerBound.doubleValue(for: .milligramsPerDeciliter) {
+                            heroStatusView.glucoseRangeCategory = .low
+                        } else if mgdl > Self.chartInRangeBand.upperBound.doubleValue(for: .milligramsPerDeciliter) {
+                            heroStatusView.glucoseRangeCategory = .high
+                        } else {
+                            heroStatusView.glucoseRangeCategory = .normal
+                        }
+                    }
+                } else {
+                    heroStatusView.glucoseRangeCategory = nil
+                }
+
+                if let eventualGlucose = self.eventualGlucoseDescription {
+                    heroStatusView.eventualGlucoseText = String(format: NSLocalizedString("Eventually %@", comment: "The subtitle format describing eventual glucose. (1: localized glucose value description)"), eventualGlucose)
+                } else {
+                    heroStatusView.eventualGlucoseText = nil
+                }
+            }
+
+            // Chart card: only refresh when this reload actually fetched glucose history.
+            // Only real CGM history is charted — no predicted values.
+            if let glucoseSamples = glucoseSamples {
+                let unit = self.deviceManager.displayGlucosePreference.unit
+                self.chartHistoricalGlucose = glucoseSamples.map { ($0.startDate, $0.quantity.doubleValue(for: unit)) }
+                self.chartTargetRange = Self.chartInRangeBand.lowerBound.doubleValue(for: unit)...Self.chartInRangeBand.upperBound.doubleValue(for: unit)
+                let displayBound = Self.chartDisplayBand
+                self.chartDisplayRange = displayBound.lowerBound.doubleValue(for: unit)...displayBound.upperBound.doubleValue(for: unit)
+                self.chartGridValues = Self.chartGridValues(for: unit)
+                self.updateChartCell()
+            }
+
+            self.tableView.endUpdates()
+
+            // Show/hide the table view rows. This must stay OUTSIDE the batch above:
+            // nested beginUpdates defer the row changes to the outer endUpdates, which
+            // commits them with the default slide animation — bouncing the action
+            // buttons — and prevents the in-place fade from finding its cells.
             let statusRowMode = self.determineStatusRowMode()
 
             self.updateBannerAndHUDandStatusRows(statusRowMode: statusRowMode, newSize: currentContext.newSize, animated: animated)
-
-            self.redrawCharts()
-
-            self.tableView.endUpdates()
 
             self.reloading = false
             let reloadNow = !self.refreshContext.isEmpty
@@ -690,34 +810,105 @@ final class StatusTableViewController: LoopChartsTableViewController {
     private enum Section: Int, CaseIterable {
         case alertWarning
         case hud
+        case hero
+        case chart
+        case stats
         case status
-        case charts
+        case actions
     }
 
-    // MARK: - Chart Section Data
+    // MARK: - Actions Section Data
 
-    private enum ChartRow: Int, CaseIterable {
-        case glucose
-        case iob
-        case dose
-        case cob
+    private enum ActionsRow: Int, CaseIterable {
+        case primary = 0
     }
 
-    // MARK: Glucose
+    // MARK: - Status Metrics Data
 
     private var eventualGlucoseDescription: String?
 
-    // MARK: IOB
-
     private var currentIOBDescription: String?
 
-    // MARK: Dose
-
-    private var totalDelivery: Double?
-
-    // MARK: COB
-
     private var currentCOBDescription: String?
+
+    private var netBasalDescription: String?
+
+    /// The most recent non-automatic bolus, cached and refreshed under the insulin refresh context.
+    /// Automatic boluses (from the Automatic Bolus dosing strategy) are excluded so this doesn't
+    /// churn every five minutes.
+    private var lastManualBolus: DoseEntry?
+
+    /// When the most recent carb entry was made, cached under the carbs refresh context
+    private var lastCarbEntryDate: Date?
+
+    /// When the current net basal took effect (updates as the loop adjusts the temp basal)
+    private var netBasalStart: Date?
+
+    private static let lastManualBolusLookback = TimeInterval(hours: 24)
+
+    /// How much glucose history the chart card shows
+    private static let chartHistoryInterval = TimeInterval(hours: 3)
+
+    /// The conventional time-in-range band (70–180 mg/dL, i.e. 3.9–10.0 mmol/L),
+    /// matching how CGM apps display "in range"
+    private static let chartInRangeBand =
+        HKQuantity(unit: .milligramsPerDeciliter, doubleValue: 70)...HKQuantity(unit: .milligramsPerDeciliter, doubleValue: 180)
+
+    /// The chart's fixed vertical domain, 2.0–22.2 mmol/L, so the in-range band sits
+    /// well clear of the bottom edge and readings up to sensor limits stay on-chart
+    private static let chartDisplayBand =
+        HKQuantity(unit: .millimolesPerLiter, doubleValue: 2.0)...HKQuantity(unit: .millimolesPerLiter, doubleValue: 22.2)
+
+    /// Values (in the display unit) marked by faint dotted gridlines with labels along
+    /// the chart's left edge
+    private static func chartGridValues(for unit: HKUnit) -> [Double] {
+        if unit == .millimolesPerLiter {
+            return Array(stride(from: 2.0, through: 22.0, by: 4.0))
+        } else {
+            return Array(stride(from: 50.0, through: 400.0, by: 50.0))
+        }
+    }
+
+    private var chartHistoricalGlucose: [(date: Date, value: Double)] = []
+    private var chartTargetRange: ClosedRange<Double>?
+    private var chartDisplayRange: ClosedRange<Double>?
+    private var chartGridValues: [Double] = []
+
+    private lazy var bolusTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    /// Shows the time remaining until pod expiration in the pump pill, derived from the
+    /// lifecycle progress. The pod's progress reports the REMAINING fraction of its
+    /// 72-hour nominal life. Units zero out rather than drop as time drains,
+    /// e.g. "0 days\n0 hrs 52 min".
+    private func updatePodExpiration(on hudView: StatusBarHUDView) {
+        if let progress = deviceManager.pumpLifecycleProgress, progress.percentComplete > 0 {
+            let nominalPodLife = TimeInterval(hours: 72)
+            let remaining = progress.percentComplete * nominalPodLife
+            let totalMinutes = Int(remaining / 60)
+            let days = totalMinutes / (24 * 60)
+            let hours = (totalMinutes % (24 * 60)) / 60
+            let minutes = totalMinutes % 60
+            hudView.pumpStatusHUD.setExpiration(text: "\(days) days\n\(hours) hrs \(minutes) min")
+        } else {
+            hudView.pumpStatusHUD.setExpiration(text: nil)
+        }
+    }
+
+    private lazy var netBasalFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 1
+        formatter.minimumIntegerDigits = 1
+        formatter.positiveFormat = "+0.0##"
+        formatter.negativeFormat = "-0.0##"
+
+        return formatter
+    }()
 
     // MARK: - Loop Status Section Data
 
@@ -746,6 +937,40 @@ final class StatusTableViewController: LoopChartsTableViewController {
     }
 
     private var statusRowMode = StatusRowMode.hidden
+
+    /// A secondary status row surfacing an active override/pre-meal when the primary row
+    /// is occupied by something else (e.g. No Recent Glucose)
+    private var overrideStatusRowMode = StatusRowMode.hidden
+
+    private func determineOverrideStatusRowMode(primaryMode: StatusRowMode) -> StatusRowMode {
+        // When the primary row already shows the override, don't repeat it
+        if case .scheduleOverrideEnabled = primaryMode {
+            return .hidden
+        }
+
+        if let scheduleOverride = deviceManager.loopManager.settings.scheduleOverride,
+            !scheduleOverride.hasFinished()
+        {
+            return .scheduleOverrideEnabled(scheduleOverride)
+        }
+
+        if let premealOverride = deviceManager.loopManager.settings.preMealOverride,
+            !premealOverride.hasFinished()
+        {
+            return .scheduleOverrideEnabled(premealOverride)
+        }
+
+        return .hidden
+    }
+
+    /// The status row mode backing a given row of the status section.
+    /// Row 0 is always the primary slot (possibly .hidden); row 1 is the override row.
+    private func statusRowMode(forRow row: Int) -> StatusRowMode {
+        if row == 0 {
+            return statusRowMode
+        }
+        return overrideStatusRowMode
+    }
 
     private func determineStatusRowMode() -> StatusRowMode {
         let statusRowMode: StatusRowMode
@@ -779,6 +1004,65 @@ final class StatusTableViewController: LoopChartsTableViewController {
         return statusRowMode
     }
 
+    /// Applies the translucent rounded card background used across the status screen
+    private func applyCardBackground(to cell: UITableViewCell, cornerRadius: CGFloat = 14) {
+        var background = UIBackgroundConfiguration.clear()
+        background.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.62)
+        background.cornerRadius = cornerRadius
+        background.backgroundInsets = NSDirectionalEdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
+        background.strokeColor = Self.cardBorderColor
+        background.strokeWidth = 1
+        cell.backgroundConfiguration = background
+    }
+
+    private func configureStatsCell(_ cell: StatsTableViewCell) {
+        let placeholder = "—"
+        cell.iobValueLabel.text = currentIOBDescription ?? placeholder
+        cell.cobValueLabel.text = currentCOBDescription ?? placeholder
+        cell.basalValueLabel.text = netBasalDescription ?? placeholder
+
+        // The last bolus belongs with active insulin
+        if let bolus = lastManualBolus,
+           let volumeString = insulinFormatter.string(from: HKQuantity(unit: .internationalUnit(), doubleValue: bolus.deliveredUnits ?? bolus.programmedUnits))
+        {
+            cell.iobCaptionLabel.text = String(format: NSLocalizedString("%1$@ · %2$@", comment: "The caption describing the last bolus below active insulin. (1: localized insulin amount)(2: localized time)"), volumeString, bolusTimeFormatter.string(from: bolus.startDate))
+        } else {
+            cell.iobCaptionLabel.text = " "
+        }
+
+        // When the most recent carbs were entered
+        if let lastCarbEntryDate = lastCarbEntryDate {
+            cell.cobCaptionLabel.text = bolusTimeFormatter.string(from: lastCarbEntryDate)
+        } else {
+            cell.cobCaptionLabel.text = " "
+        }
+
+        // When the current net basal took effect
+        if let netBasalStart = netBasalStart {
+            cell.basalCaptionLabel.text = bolusTimeFormatter.string(from: netBasalStart)
+        } else {
+            cell.basalCaptionLabel.text = " "
+        }
+    }
+
+    private func configureChartCell(_ cell: GlucoseChartTableViewCell) {
+        cell.titleLabel.text = NSLocalizedString("Glucose – Last 3 Hours", comment: "The title of the status screen glucose chart card")
+        cell.unitLabel.text = deviceManager.displayGlucosePreference.unit.localizedShortUnitString
+        cell.chartView.setData(historical: chartHistoricalGlucose, predicted: [], targetRange: chartTargetRange, displayRange: chartDisplayRange, gridValues: chartGridValues)
+    }
+
+    private func updateChartCell() {
+        if let cell = tableView.cellForRow(at: IndexPath(row: 0, section: Section.chart.rawValue)) as? GlucoseChartTableViewCell {
+            configureChartCell(cell)
+        }
+    }
+
+    private func updateStatsCell() {
+        if let cell = tableView.cellForRow(at: IndexPath(row: 0, section: Section.stats.rawValue)) as? StatsTableViewCell {
+            configureStatsCell(cell)
+        }
+    }
+
     private var shouldShowBannerWarning: Bool {
         alertPermissionsChecker.showWarning || alertMuter.configuration.shouldMute
     }
@@ -796,74 +1080,141 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
     private func updateBannerAndHUDandStatusRows(statusRowMode: StatusRowMode, newSize: CGSize?, animated: Bool) {
         let hudWasVisible = self.shouldShowHUD
-        let statusWasVisible = self.shouldShowStatus
+        // The primary status row is a permanent slot in portrait; only rotation
+        // inserts or deletes it
+        let statusWasVisible = !landscapeMode
+        let overrideWasVisible = !landscapeMode && self.overrideStatusRowMode.hasRow
+        let oldOverrideRow = statusWasVisible ? 1 : 0
 
         let oldStatusRowMode = self.statusRowMode
 
         self.statusRowMode = statusRowMode
+        self.overrideStatusRowMode = determineOverrideStatusRowMode(primaryMode: statusRowMode)
 
         if let newSize = newSize {
             landscapeMode = newSize.width > newSize.height
         }
 
         let hudIsVisible = self.shouldShowHUD
-        let statusIsVisible = self.shouldShowStatus
+        let statusIsVisible = !landscapeMode
+        let overrideIsVisible = !landscapeMode && self.overrideStatusRowMode.hasRow
+        let newOverrideRow = statusIsVisible ? 1 : 0
 
         hudView?.cgmStatusHUD?.isVisible = hudIsVisible
 
-        tableView.beginUpdates()
-        
-        updateBannerRow(animated: animated)
+        // Status rows fade in and out strictly in place: all row changes are applied
+        // without movement (the spacer above the actions absorbs the height change
+        // within the same frame, so the buttons never shift), outgoing rows fade away
+        // via a snapshot left at their old position, and incoming rows fade in.
+        var fadeOutSnapshots: [UIView] = []
+        var fadeInRows: [IndexPath] = []
 
-        switch (hudWasVisible, hudIsVisible) {
-        case (false, true):
-            tableView.insertRows(at: [IndexPath(row: 0, section: Section.hud.rawValue)], with: animated ? .top : .none)
-        case (true, false):
-            tableView.deleteRows(at: [IndexPath(row: 0, section: Section.hud.rawValue)], with: animated ? .top : .none)
-        default:
-            break
+        func snapshotRowForFadeOut(at indexPath: IndexPath) {
+            guard animated,
+                  let cell = tableView.cellForRow(at: indexPath),
+                  let snapshot = cell.snapshotView(afterScreenUpdates: false) else {
+                return
+            }
+            snapshot.frame = cell.frame
+            fadeOutSnapshots.append(snapshot)
         }
 
         let statusIndexPath = IndexPath(row: StatusRow.status.rawValue, section: Section.status.rawValue)
+        let oldOverrideIndexPath = IndexPath(row: oldOverrideRow, section: Section.status.rawValue)
+        let newOverrideIndexPath = IndexPath(row: newOverrideRow, section: Section.status.rawValue)
 
-        switch (statusWasVisible, statusIsVisible) {
-        case (true, true):
-            switch (oldStatusRowMode, self.statusRowMode) {
-            case (.enactingBolus, .enactingBolus):
-                break
-            case (.bolusing(let oldDose), .bolusing(let newDose)):
-                if oldDose.syncIdentifier != newDose.syncIdentifier {
-                    tableView.reloadRows(at: [statusIndexPath], with: animated ? .fade : .none)
-                }
-            case (.pumpSuspended(resuming: let wasResuming), .pumpSuspended(resuming: let isResuming)):
-                if isResuming != wasResuming {
-                    tableView.reloadRows(at: [statusIndexPath], with: animated ? .fade : .none)
-                }
-            default:
-                tableView.reloadRows(at: [statusIndexPath], with: animated ? .fade : .none)
-            }
-        case (false, true):
-            tableView.insertRows(at: [statusIndexPath], with: animated ? .bottom : .none)
-        case (true, false):
-            tableView.deleteRows(at: [statusIndexPath], with: animated ? .top : .none)
+        let statusNeedsReload: Bool
+        switch (oldStatusRowMode, self.statusRowMode) {
+        case (.hidden, .hidden):
+            statusNeedsReload = false
+        case (.enactingBolus, .enactingBolus):
+            statusNeedsReload = false
+        case (.bolusing(let oldDose), .bolusing(let newDose)):
+            statusNeedsReload = oldDose.syncIdentifier != newDose.syncIdentifier
+        case (.pumpSuspended(resuming: let wasResuming), .pumpSuspended(resuming: let isResuming)):
+            statusNeedsReload = isResuming != wasResuming
         default:
-            break
+            statusNeedsReload = true
         }
 
-        tableView.endUpdates()
-    }
+        // Snapshots must be taken while the outgoing cells are still on screen
+        if statusWasVisible && (!statusIsVisible || statusNeedsReload) {
+            snapshotRowForFadeOut(at: statusIndexPath)
+        }
+        if overrideWasVisible && !overrideIsVisible {
+            snapshotRowForFadeOut(at: oldOverrideIndexPath)
+        }
 
-    private func redrawCharts() {
-        tableView.beginUpdates()
-        charts.prerender()
-        for case let cell as ChartTableViewCell in tableView.visibleCells {
-            cell.reloadChart()
+        UIView.performWithoutAnimation {
+            tableView.beginUpdates()
 
-            if let indexPath = tableView.indexPath(for: cell) {
-                self.tableView(tableView, updateSubtitleFor: cell, at: indexPath)
+            updateBannerRow(animated: false)
+
+            switch (hudWasVisible, hudIsVisible) {
+            case (false, true):
+                tableView.insertRows(at: [IndexPath(row: 0, section: Section.hud.rawValue)], with: .none)
+            case (true, false):
+                tableView.deleteRows(at: [IndexPath(row: 0, section: Section.hud.rawValue)], with: .none)
+            default:
+                break
+            }
+
+            switch (statusWasVisible, statusIsVisible) {
+            case (true, true):
+                if statusNeedsReload {
+                    tableView.reloadRows(at: [statusIndexPath], with: .none)
+                    fadeInRows.append(statusIndexPath)
+                }
+            case (false, true):
+                tableView.insertRows(at: [statusIndexPath], with: .none)
+                fadeInRows.append(statusIndexPath)
+            case (true, false):
+                tableView.deleteRows(at: [statusIndexPath], with: .none)
+            default:
+                break
+            }
+
+            // Secondary override row (deletes address the old index space, inserts the new)
+            switch (overrideWasVisible, overrideIsVisible) {
+            case (true, true):
+                tableView.deleteRows(at: [oldOverrideIndexPath], with: .none)
+                tableView.insertRows(at: [newOverrideIndexPath], with: .none)
+            case (false, true):
+                tableView.insertRows(at: [newOverrideIndexPath], with: .none)
+                fadeInRows.append(newOverrideIndexPath)
+            case (true, false):
+                tableView.deleteRows(at: [oldOverrideIndexPath], with: .none)
+            case (false, false):
+                break
+            }
+
+            tableView.endUpdates()
+
+            // Settle the new row heights and re-balance the bottom spacer within the
+            // same frame so the action buttons hold their position
+            tableView.layoutIfNeeded()
+            updateActionsBottomSpacer()
+            tableView.layoutIfNeeded()
+        }
+
+        guard animated else { return }
+
+        for indexPath in fadeInRows {
+            guard let cell = tableView.cellForRow(at: indexPath) else { continue }
+            cell.alpha = 0
+            UIView.animate(withDuration: 0.3) {
+                cell.alpha = 1
             }
         }
-        tableView.endUpdates()
+
+        for snapshot in fadeOutSnapshots {
+            tableView.addSubview(snapshot)
+            UIView.animate(withDuration: 0.25, animations: {
+                snapshot.alpha = 0
+            }, completion: { _ in
+                snapshot.removeFromSuperview()
+            })
+        }
     }
 
     // MARK: - Toolbar data
@@ -887,7 +1238,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 (automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled)
                 && deviceManager.loopManager.settings.preMealTargetRange != nil
         workoutModeAllowed = onboardingManager.isComplete && workoutMode != nil
-        updateToolbarItems()
+        updateActionButtons()
     }
 
     private var workoutMode: Bool? = nil {
@@ -896,7 +1247,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 return
             }
             workoutModeAllowed = workoutMode != nil && onboardingManager.isComplete
-            updateToolbarItems()
+            updateActionButtons()
         }
     }
     private lazy var workoutModeAllowed: Bool = {
@@ -913,12 +1264,724 @@ final class StatusTableViewController: LoopChartsTableViewController {
         switch Section(rawValue: section)! {
         case .alertWarning:
             return shouldShowBannerWarning ? 1 : 0
+        case .hero:
+            return 1
+        case .chart:
+            return 1
+        case .stats:
+            return 1
         case .hud:
             return shouldShowHUD ? 1 : 0
-        case .charts:
-            return ChartRow.allCases.count
         case .status:
-            return shouldShowStatus ? StatusRow.allCases.count : 0
+            guard !landscapeMode else {
+                return 0
+            }
+            // The primary status row is a permanent fixed-height slot (invisible when
+            // .hidden) so cards fade in and out of it without reflowing the layout —
+            // the action buttons below never move
+            return 1 + (overrideStatusRowMode.hasRow ? 1 : 0)
+        case .actions:
+            return ActionsRow.allCases.count
+        }
+    }
+
+    override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        // Status cards swap between cell types of different natural heights (e.g. the
+        // 44pt bolus progress nib vs 58pt title/subtitle cards); a fixed height keeps
+        // the slot — and the action buttons below it — from shifting between modes
+        if Section(rawValue: indexPath.section) == .status {
+            return 58
+        }
+        return UITableView.automaticDimension
+    }
+
+    /// The card border color: the system separator, heavily softened
+    static let cardBorderColor = UIColor { traits in
+        let resolved = UIColor.separator.resolvedColor(with: traits)
+        return resolved.withAlphaComponent(resolved.cgColor.alpha * 0.35)
+    }
+
+    /// A rounded, translucent card with a hairline border so it reads against the
+    /// equally subtle background gradient
+    private final class CardView: UIView {
+        init(cornerRadius: CGFloat) {
+            super.init(frame: .zero)
+            backgroundColor = .systemBackground.withAlphaComponent(0.62)
+            layer.cornerRadius = cornerRadius
+            layer.cornerCurve = .continuous
+            layer.borderWidth = 1
+            // A whisper of depth in place of the heavier border
+            layer.shadowColor = UIColor.black.cgColor
+            layer.shadowOpacity = 0.05
+            layer.shadowRadius = 5
+            layer.shadowOffset = CGSize(width: 0, height: 2)
+            translatesAutoresizingMaskIntoConstraints = false
+            updateBorderColor()
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+            super.traitCollectionDidChange(previousTraitCollection)
+            updateBorderColor()
+        }
+
+        private func updateBorderColor() {
+            layer.borderColor = StatusTableViewController.cardBorderColor.resolvedColor(with: traitCollection).cgColor
+        }
+    }
+
+    /// A rounded, translucent card container used by the redesigned status cells;
+    /// partially transparent so the background gradient shows through
+    private static func makeCardView(cornerRadius: CGFloat = 20) -> UIView {
+        return CardView(cornerRadius: cornerRadius)
+    }
+
+    private class HeroStatusTableViewCell: UITableViewCell {
+        let heroView = StatusHeroView()
+
+        override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+            super.init(style: style, reuseIdentifier: reuseIdentifier)
+
+            selectionStyle = .none
+            backgroundColor = .clear
+
+            let cardView = StatusTableViewController.makeCardView()
+            heroView.translatesAutoresizingMaskIntoConstraints = false
+            cardView.addSubview(heroView)
+            contentView.addSubview(cardView)
+
+            let bottomConstraint = cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4)
+            bottomConstraint.priority = UILayoutPriority(999)
+            NSLayoutConstraint.activate([
+                heroView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor),
+                heroView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor),
+                heroView.topAnchor.constraint(equalTo: cardView.topAnchor),
+                heroView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor),
+
+                cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+                cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+                cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
+                bottomConstraint,
+            ])
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+    }
+
+    /// A lightweight glucose chart: target-range band, history line with endpoint dot,
+    /// dashed prediction tail, and hourly time labels. No interaction; tap the card to
+    /// open the prediction screen.
+    private final class SimpleGlucoseChartView: UIView {
+        private var historical: [(date: Date, value: Double)] = []
+        private var predicted: [(date: Date, value: Double)] = []
+        private var targetRange: ClosedRange<Double>?
+        private var displayRange: ClosedRange<Double>?
+        private var gridValues: [Double] = []
+
+        private lazy var axisTimeFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .none
+            formatter.timeStyle = .short
+            return formatter
+        }()
+
+        private lazy var axisValueFormatter: NumberFormatter = {
+            let formatter = NumberFormatter()
+            formatter.maximumFractionDigits = 1
+            formatter.minimumFractionDigits = 0
+            return formatter
+        }()
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isOpaque = false
+            backgroundColor = .clear
+            contentMode = .redraw
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        func setData(historical: [(date: Date, value: Double)], predicted: [(date: Date, value: Double)], targetRange: ClosedRange<Double>?, displayRange: ClosedRange<Double>?, gridValues: [Double] = []) {
+            self.historical = historical.sorted { $0.date < $1.date }
+            self.predicted = predicted.sorted { $0.date < $1.date }
+            self.targetRange = targetRange
+            self.displayRange = displayRange
+            self.gridValues = gridValues
+            setNeedsDisplay()
+        }
+
+        override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+            super.traitCollectionDidChange(previousTraitCollection)
+            setNeedsDisplay()
+        }
+
+        override func draw(_ rect: CGRect) {
+            let axisHeight: CGFloat = 14
+            // Reserve a right-hand gutter for the range value labels and a left-hand
+            // gutter for the gridline labels
+            let valueAxisWidth: CGFloat = 30
+            let leftAxisWidth: CGFloat = gridValues.isEmpty ? 0 : 24
+            let drawRect = CGRect(x: bounds.minX + leftAxisWidth + 2, y: bounds.minY + 4, width: bounds.width - leftAxisWidth - valueAxisWidth - 6, height: bounds.height - axisHeight - 8)
+
+            let all = historical + predicted
+            let minDate = all.map(\.date).min() ?? Date(timeIntervalSinceNow: -TimeInterval(hours: 3))
+            let maxDate = all.map(\.date).max() ?? Date()
+            guard maxDate > minDate else { return }
+            let dateSpan = maxDate.timeIntervalSince(minDate)
+
+            // A fixed display range keeps the line calm (like the CGM app's chart)
+            // instead of amplifying small wiggles by auto-scaling to the data;
+            // the domain only expands when data or the target band falls outside it.
+            var valueMin = displayRange?.lowerBound ?? all.map(\.value).min() ?? targetRange?.lowerBound ?? 0
+            var valueMax = displayRange?.upperBound ?? all.map(\.value).max() ?? targetRange?.upperBound ?? 1
+            if let dataMin = all.map(\.value).min(), let dataMax = all.map(\.value).max() {
+                valueMin = min(valueMin, dataMin)
+                valueMax = max(valueMax, dataMax)
+            }
+            if let targetRange = targetRange {
+                valueMin = min(valueMin, targetRange.lowerBound)
+                valueMax = max(valueMax, targetRange.upperBound)
+            }
+            // Keep the padding tight so the fixed domain edges (2.0 and 22.2) stay
+            // close to the chart edges and the outermost gridlines remain visible
+            let padding = max((valueMax - valueMin) * 0.02, 0.1)
+            valueMin -= padding
+            valueMax += padding
+            let valueSpan = valueMax - valueMin
+
+            func x(for date: Date) -> CGFloat {
+                drawRect.minX + CGFloat(date.timeIntervalSince(minDate) / dateSpan) * drawRect.width
+            }
+            func y(for value: Double) -> CGFloat {
+                drawRect.maxY - CGFloat((value - valueMin) / valueSpan) * drawRect.height
+            }
+            func point(for sample: (date: Date, value: Double)) -> CGPoint {
+                CGPoint(x: x(for: sample.date), y: y(for: sample.value))
+            }
+
+            // Faint dotted horizontal gridlines with their values along the left edge
+            let gridColor = UIColor.tertiaryLabel.resolvedColor(with: traitCollection)
+            let gridLabelAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.monospacedDigitSystemFont(ofSize: 9, weight: .regular),
+                .foregroundColor: gridColor,
+            ]
+            for value in gridValues where value >= valueMin && value <= valueMax {
+                let lineY = y(for: value)
+                let linePath = UIBezierPath()
+                linePath.move(to: CGPoint(x: drawRect.minX, y: lineY))
+                linePath.addLine(to: CGPoint(x: drawRect.maxX, y: lineY))
+                linePath.lineWidth = 0.5
+                linePath.setLineDash([2, 3], count: 2, phase: 0)
+                gridColor.withAlphaComponent(0.6).setStroke()
+                linePath.stroke()
+
+                guard let text = axisValueFormatter.string(from: NSNumber(value: value)) else { continue }
+                let label = text as NSString
+                let size = label.size(withAttributes: gridLabelAttributes)
+                let labelY = min(max(lineY - size.height / 2, bounds.minY), bounds.maxY - size.height)
+                label.draw(at: CGPoint(x: drawRect.minX - size.width - 4, y: labelY), withAttributes: gridLabelAttributes)
+            }
+
+            // Target range band
+            if let targetRange = targetRange {
+                let bandRect = CGRect(x: drawRect.minX,
+                                      y: y(for: targetRange.upperBound),
+                                      width: drawRect.width,
+                                      height: y(for: targetRange.lowerBound) - y(for: targetRange.upperBound))
+                let bandPath = UIBezierPath(roundedRect: bandRect, cornerRadius: 3)
+                UIColor.freshColor.withAlphaComponent(0.15).resolvedColor(with: traitCollection).setFill()
+                bandPath.fill()
+
+                let caption = NSLocalizedString("Target Range", comment: "Caption on the glucose chart target range band") as NSString
+                let captionAttributes: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: 8, weight: .medium),
+                    .foregroundColor: UIColor.freshColor.resolvedColor(with: traitCollection),
+                ]
+                let captionSize = caption.size(withAttributes: captionAttributes)
+                caption.draw(at: CGPoint(x: bandRect.maxX - captionSize.width - 4, y: bandRect.maxY - captionSize.height - 2), withAttributes: captionAttributes)
+
+                // Range values in the right-hand gutter, aligned with the band edges
+                let rangeValueAttributes: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium),
+                    .foregroundColor: UIColor.freshColor.resolvedColor(with: traitCollection),
+                ]
+                for bound in [targetRange.upperBound, targetRange.lowerBound] {
+                    guard let text = axisValueFormatter.string(from: NSNumber(value: bound)) else {
+                        continue
+                    }
+                    let label = text as NSString
+                    let size = label.size(withAttributes: rangeValueAttributes)
+                    let labelY = min(max(y(for: bound) - size.height / 2, bounds.minY), bounds.maxY - size.height)
+                    label.draw(at: CGPoint(x: bounds.maxX - size.width - 2, y: labelY), withAttributes: rangeValueAttributes)
+                }
+            }
+
+            func path(for samples: [(date: Date, value: Double)]) -> UIBezierPath {
+                let path = UIBezierPath()
+                path.lineCapStyle = .round
+                path.lineJoinStyle = .round
+                for (index, sample) in samples.enumerated() {
+                    if index == 0 {
+                        path.move(to: point(for: sample))
+                    } else {
+                        path.addLine(to: point(for: sample))
+                    }
+                }
+                return path
+            }
+
+            // History line and endpoint dot, in the palette's info accent
+            let lineColor = (UIColor(named: "infoAccent") ?? .systemBlue).resolvedColor(with: traitCollection)
+
+            // Soft gradient shading under the history line, fading downward. The fill's
+            // floor is the target band's top edge, so shading only appears where the
+            // line rises above the green section.
+            if historical.count > 1, let context = UIGraphicsGetCurrentContext() {
+                let shadeFloor = targetRange.map { y(for: $0.upperBound) } ?? drawRect.maxY
+                let areaPath = path(for: historical)
+                areaPath.addLine(to: CGPoint(x: point(for: historical[historical.count - 1]).x, y: shadeFloor))
+                areaPath.addLine(to: CGPoint(x: point(for: historical[0]).x, y: shadeFloor))
+                areaPath.close()
+
+                context.saveGState()
+                // Constrain to above the floor so stretches where the line dips into
+                // the band contribute no fill
+                context.clip(to: CGRect(x: drawRect.minX, y: drawRect.minY, width: drawRect.width, height: max(0, shadeFloor - drawRect.minY)))
+                areaPath.addClip()
+                let shadeTop = historical.map { y(for: $0.value) }.min() ?? drawRect.minY
+                let shadeColors = [lineColor.withAlphaComponent(0.22).cgColor,
+                                   lineColor.withAlphaComponent(0.0).cgColor] as CFArray
+                if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: shadeColors, locations: [0, 1]) {
+                    context.drawLinearGradient(gradient,
+                                               start: CGPoint(x: 0, y: shadeTop),
+                                               end: CGPoint(x: 0, y: shadeFloor),
+                                               options: [])
+                }
+                context.restoreGState()
+            }
+
+            if historical.count > 1 {
+                let historyPath = path(for: historical)
+                historyPath.lineWidth = 2
+                lineColor.setStroke()
+                historyPath.stroke()
+            }
+            if let last = historical.last {
+                let dotRect = CGRect(x: point(for: last).x - 3, y: point(for: last).y - 3, width: 6, height: 6)
+                lineColor.setFill()
+                UIBezierPath(ovalIn: dotRect).fill()
+            }
+
+            // Dashed prediction tail, connected to the last real reading
+            var predictionSamples = predicted
+            if let lastHistorical = historical.last {
+                predictionSamples.insert(lastHistorical, at: 0)
+            }
+            if predictionSamples.count > 1 {
+                let predictionPath = path(for: predictionSamples)
+                predictionPath.lineWidth = 1.5
+                predictionPath.setLineDash([3, 3], count: 2, phase: 0)
+                lineColor.withAlphaComponent(0.6).setStroke()
+                predictionPath.stroke()
+            }
+
+            // Hourly time labels along the bottom
+            let labelAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 9),
+                .foregroundColor: UIColor.tertiaryLabel.resolvedColor(with: traitCollection),
+            ]
+            var tick = Calendar.current.nextDate(after: minDate, matching: DateComponents(minute: 0), matchingPolicy: .strict, direction: .forward) ?? minDate
+            while tick <= maxDate {
+                let text = axisTimeFormatter.string(from: tick) as NSString
+                let size = text.size(withAttributes: labelAttributes)
+                let centeredX = min(max(x(for: tick) - size.width / 2, bounds.minX), bounds.maxX - size.width)
+                text.draw(at: CGPoint(x: centeredX, y: bounds.maxY - size.height - 1), withAttributes: labelAttributes)
+                tick = tick.addingTimeInterval(.hours(1))
+            }
+        }
+    }
+
+    private class GlucoseChartTableViewCell: UITableViewCell {
+        let titleLabel: UILabel = {
+            let label = UILabel()
+            label.font = .systemFont(ofSize: 13, weight: .semibold)
+            label.textColor = .label
+            return label
+        }()
+
+        let unitLabel: UILabel = {
+            let label = UILabel()
+            label.font = .systemFont(ofSize: 11)
+            label.textColor = .secondaryLabel
+            return label
+        }()
+
+        let chartView = SimpleGlucoseChartView()
+
+        override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+            super.init(style: style, reuseIdentifier: reuseIdentifier)
+
+            selectionStyle = .none
+            backgroundColor = .clear
+
+            let cardView = StatusTableViewController.makeCardView(cornerRadius: 16)
+            titleLabel.translatesAutoresizingMaskIntoConstraints = false
+            unitLabel.translatesAutoresizingMaskIntoConstraints = false
+            chartView.translatesAutoresizingMaskIntoConstraints = false
+            cardView.addSubview(titleLabel)
+            cardView.addSubview(unitLabel)
+            cardView.addSubview(chartView)
+            contentView.addSubview(cardView)
+
+            let bottomConstraint = cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4)
+            bottomConstraint.priority = UILayoutPriority(999)
+            NSLayoutConstraint.activate([
+                titleLabel.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
+                titleLabel.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 12),
+                unitLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
+                unitLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+
+                chartView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
+                chartView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
+                chartView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6),
+                chartView.heightAnchor.constraint(equalToConstant: 150),
+                chartView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -10),
+
+                cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+                cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+                cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
+                bottomConstraint,
+            ])
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+    }
+
+    private class StatsTableViewCell: UITableViewCell {
+        let iobValueLabel = UILabel()
+        let cobValueLabel = UILabel()
+        let basalValueLabel = UILabel()
+        let iobCaptionLabel = UILabel()
+        let cobCaptionLabel = UILabel()
+        let basalCaptionLabel = UILabel()
+
+        override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+            super.init(style: style, reuseIdentifier: reuseIdentifier)
+
+            selectionStyle = .none
+            backgroundColor = .clear
+
+            // Three separate small cards, one per metric, each with an optional caption
+            // line (e.g. the last bolus under Active Insulin)
+            let cards = [
+                (NSLocalizedString("Active Insulin", comment: "The title of the active insulin stats column"), iobValueLabel, iobCaptionLabel),
+                (NSLocalizedString("Active Carbs", comment: "The title of the active carbs stats column"), cobValueLabel, cobCaptionLabel),
+                (NSLocalizedString("Basal", comment: "The title of the basal stats column"), basalValueLabel, basalCaptionLabel),
+            ].map { (title, valueLabel, captionLabel) -> UIView in
+                let titleLabel = UILabel()
+                titleLabel.font = .systemFont(ofSize: 12)
+                titleLabel.textColor = .secondaryLabel
+                titleLabel.text = title
+                titleLabel.adjustsFontSizeToFitWidth = true
+
+                valueLabel.font = .monospacedDigitSystemFont(ofSize: 18, weight: .semibold)
+                valueLabel.textColor = .label
+
+                captionLabel.font = .systemFont(ofSize: 10)
+                captionLabel.textColor = .secondaryLabel
+                captionLabel.adjustsFontSizeToFitWidth = true
+                captionLabel.minimumScaleFactor = 0.7
+                captionLabel.text = " "
+
+                let column = UIStackView(arrangedSubviews: [titleLabel, valueLabel, captionLabel])
+                column.axis = .vertical
+                column.alignment = .center
+                column.spacing = 3
+                column.translatesAutoresizingMaskIntoConstraints = false
+
+                let card = StatusTableViewController.makeCardView(cornerRadius: 14)
+                card.addSubview(column)
+                NSLayoutConstraint.activate([
+                    column.centerXAnchor.constraint(equalTo: card.centerXAnchor),
+                    column.leadingAnchor.constraint(greaterThanOrEqualTo: card.leadingAnchor, constant: 6),
+                    column.topAnchor.constraint(equalTo: card.topAnchor, constant: 10),
+                    column.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -10),
+                ])
+                return card
+            }
+
+            let stack = UIStackView(arrangedSubviews: cards)
+            stack.axis = .horizontal
+            stack.distribution = .fillEqually
+            stack.spacing = 10
+            stack.translatesAutoresizingMaskIntoConstraints = false
+
+            contentView.addSubview(stack)
+
+            let bottomConstraint = stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4)
+            bottomConstraint.priority = UILayoutPriority(999)
+
+            NSLayoutConstraint.activate([
+                stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+                stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+                stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
+                bottomConstraint,
+            ])
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+    }
+
+    /// The prominent filled style shared by the bottom action row and the MORE sheet
+    private static func makeActionButton(title: String, image: UIImage?, color: UIColor, fontSize: CGFloat = 15, imagePlacement: NSDirectionalRectEdge = .top) -> UIButton {
+        // Flat filled style everywhere — no Liquid Glass: its gradient sheen and
+        // springy press animation read as lag and gradient on the buttons
+        var config: UIButton.Configuration = .filled()
+        config.cornerStyle = .large
+        config.baseForegroundColor = .white
+        config.baseBackgroundColor = color
+        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 4, bottom: 8, trailing: 4)
+
+        if imagePlacement == .top {
+            // UIButton's own image-above-title layout pixel-floors the image's x origin,
+            // leaving the icon a hair left of center at fractional button widths. Bypass
+            // it: content is our own stack pinned to the button's exact center.
+            let button = UIButton(configuration: config)
+            button.tintColor = color
+            button.heightAnchor.constraint(greaterThanOrEqualToConstant: 64).isActive = true
+
+            let iconView = UIImageView(image: image?.withRenderingMode(.alwaysTemplate))
+            iconView.tintColor = .white
+            iconView.contentMode = .center
+
+            let label = UILabel()
+            label.text = title
+            label.font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
+            label.textColor = .white
+            label.textAlignment = .center
+
+            let content = UIStackView(arrangedSubviews: [iconView, label])
+            content.axis = .vertical
+            content.alignment = .center
+            content.spacing = 5
+            content.isUserInteractionEnabled = false
+            content.translatesAutoresizingMaskIntoConstraints = false
+            button.addSubview(content)
+            NSLayoutConstraint.activate([
+                content.centerXAnchor.constraint(equalTo: button.centerXAnchor),
+                content.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+                content.widthAnchor.constraint(lessThanOrEqualTo: button.widthAnchor, constant: -16),
+            ])
+
+            // Custom subviews don't follow the configuration's disabled dimming
+            button.configurationUpdateHandler = { button in
+                content.alpha = button.isEnabled ? 1.0 : 0.4
+            }
+            return button
+        }
+
+        // With an attributed title, the button derives its title alignment from the string's
+        // paragraph style (default: leading), overriding titleAlignment — center it explicitly
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+        config.attributedTitle = AttributedString(NSAttributedString(string: title, attributes: [
+            .font: UIFont.systemFont(ofSize: fontSize, weight: .semibold),
+            .paragraphStyle: paragraphStyle,
+        ]))
+        config.image = image?.withRenderingMode(.alwaysTemplate)
+        config.imagePlacement = imagePlacement
+        config.imagePadding = 8
+        config.titleAlignment = .center
+        let button = UIButton(configuration: config)
+        button.tintColor = color
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 56).isActive = true
+        return button
+    }
+
+    /// Restyles an action button between its normal filled look and a pressed-in
+    /// "active" look: a border in the button's color around a lighter fill, with
+    /// the content in the color
+    private static func setActionButton(_ button: UIButton, color: UIColor, active: Bool) {
+        guard var config = button.configuration else { return }
+        if active {
+            config.baseBackgroundColor = blend(color, with: .systemBackground, fraction: 0.75)
+            config.baseForegroundColor = color
+            config.background.strokeColor = color
+            config.background.strokeWidth = 2.5
+        } else {
+            config.baseBackgroundColor = color
+            config.baseForegroundColor = .white
+            config.background.strokeColor = nil
+            config.background.strokeWidth = 0
+        }
+        button.configuration = config
+        button.tintColor = color
+    }
+
+    private class PrimaryActionsTableViewCell: UITableViewCell {
+        var onBolus: (() -> Void)?
+        var onCarbs: (() -> Void)?
+        var onMore: (() -> Void)?
+        var onSettings: (() -> Void)?
+
+        let bolusButton: UIButton
+        let carbsButton: UIButton
+        let moreButton: UIButton
+        let settingsButton: UIButton
+
+        override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+            // Distinct palette colors: slate for the primary action, success green for
+            // carbs, info blue for more, lighter slate for settings
+            bolusButton = StatusTableViewController.makeActionButton(title: NSLocalizedString("Bolus", comment: "The label of the bolus action button"),
+                                                                     image: UIImage(named: "bolus"),
+                                                                     color: UIColor(named: "primaryButton1") ?? .systemTeal)
+            carbsButton = StatusTableViewController.makeActionButton(title: NSLocalizedString("Carbs", comment: "The label of the carb entry action button"),
+                                                                     image: UIImage(named: "carbs"),
+                                                                     color: .freshColor)
+            moreButton = StatusTableViewController.makeActionButton(title: NSLocalizedString("More", comment: "The label of the more actions button"),
+                                                                    image: UIImage(systemName: "ellipsis.circle"),
+                                                                    color: UIColor(named: "infoAccent") ?? .systemBlue)
+            settingsButton = StatusTableViewController.makeActionButton(title: NSLocalizedString("Settings", comment: "The label of the settings action button"),
+                                                                        image: UIImage(systemName: "gearshape"),
+                                                                        color: UIColor(named: "primaryButton3") ?? .systemGray)
+
+            super.init(style: style, reuseIdentifier: reuseIdentifier)
+
+            selectionStyle = .none
+            backgroundColor = .clear
+
+            bolusButton.addTarget(self, action: #selector(bolusTapped), for: .touchUpInside)
+            carbsButton.addTarget(self, action: #selector(carbsTapped), for: .touchUpInside)
+            moreButton.addTarget(self, action: #selector(moreTapped), for: .touchUpInside)
+            settingsButton.addTarget(self, action: #selector(settingsTapped), for: .touchUpInside)
+
+            let stack = UIStackView(arrangedSubviews: [bolusButton, carbsButton, moreButton, settingsButton])
+            stack.axis = .horizontal
+            stack.distribution = .fillEqually
+            stack.spacing = 10
+            stack.translatesAutoresizingMaskIntoConstraints = false
+
+            contentView.addSubview(stack)
+            let bottomConstraint = stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10)
+            bottomConstraint.priority = UILayoutPriority(999)
+            NSLayoutConstraint.activate([
+                stack.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
+                stack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
+                stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+                bottomConstraint,
+            ])
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        @objc private func bolusTapped() {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            onBolus?()
+        }
+        @objc private func carbsTapped() {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            onCarbs?()
+        }
+        @objc private func moreTapped() {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            onMore?()
+        }
+        @objc private func settingsTapped() {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            onSettings?()
+        }
+    }
+
+    /// The sheet behind the MORE button: full-width pre-meal, suspend, and preset
+    /// buttons in the same prominent style as the bottom action row
+    private final class MoreActionsViewController: UIViewController {
+        var onPreMeal: (() -> Void)?
+        var onSuspend: (() -> Void)?
+        var onPreset: (() -> Void)?
+
+        static let preMealColor: UIColor = .freshColor
+        static let suspendColor: UIColor = UIColor(named: "primaryButton2") ?? .systemGray
+        static let presetColor = UIColor(named: "infoAccent") ?? .systemBlue
+
+        let preMealButton = StatusTableViewController.makeActionButton(title: NSLocalizedString("Pre-Meal", comment: "The label of the pre-meal action button"),
+                                                                       image: UIImage.preMealImage(selected: false),
+                                                                       color: preMealColor,
+                                                                       fontSize: 17,
+                                                                       imagePlacement: .leading)
+        let suspendButton = StatusTableViewController.makeActionButton(title: NSLocalizedString("Suspend", comment: "The label of the suspend insulin delivery action button"),
+                                                                       image: UIImage(systemName: "pause.circle"),
+                                                                       color: suspendColor,
+                                                                       fontSize: 17,
+                                                                       imagePlacement: .leading)
+        let presetButton = StatusTableViewController.makeActionButton(title: NSLocalizedString("Preset", comment: "The label of the preset action button"),
+                                                                      image: UIImage.workoutImage(selected: false),
+                                                                      color: presetColor,
+                                                                      fontSize: 17,
+                                                                      imagePlacement: .leading)
+
+        override func viewDidLoad() {
+            super.viewDidLoad()
+
+            view.backgroundColor = .systemBackground
+
+            preMealButton.addTarget(self, action: #selector(preMealTapped), for: .touchUpInside)
+            suspendButton.addTarget(self, action: #selector(suspendTapped), for: .touchUpInside)
+            presetButton.addTarget(self, action: #selector(presetTapped), for: .touchUpInside)
+
+            let stack = UIStackView(arrangedSubviews: [preMealButton, suspendButton, presetButton])
+            stack.axis = .vertical
+            stack.spacing = 12
+            stack.translatesAutoresizingMaskIntoConstraints = false
+
+            view.addSubview(stack)
+            NSLayoutConstraint.activate([
+                stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+                stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+                stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 28),
+            ])
+        }
+
+        func setPreMeal(selected: Bool, enabled: Bool) {
+            StatusTableViewController.setActionButton(preMealButton, color: Self.preMealColor, active: selected)
+            preMealButton.isEnabled = enabled
+            if selected {
+                preMealButton.accessibilityTraits.insert(.selected)
+                preMealButton.accessibilityHint = NSLocalizedString("Disables", comment: "The action hint of the workout mode toggle button when enabled")
+            } else {
+                preMealButton.accessibilityTraits.remove(.selected)
+                preMealButton.accessibilityHint = NSLocalizedString("Enables", comment: "The action hint of the workout mode toggle button when disabled")
+            }
+        }
+
+        func setPreset(active: Bool, enabled: Bool) {
+            StatusTableViewController.setActionButton(presetButton, color: Self.presetColor, active: active)
+            presetButton.isEnabled = enabled
+        }
+
+        @objc private func preMealTapped() {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onPreMeal?()
+        }
+        @objc private func suspendTapped() {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onSuspend?()
+        }
+        @objc private func presetTapped() {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onPreset?()
         }
     }
 
@@ -1015,44 +2078,31 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 cell.selectionStyle = .none
                 return cell
             }
-        case .hud:
-            let cell = tableView.dequeueReusableCell(withIdentifier: HUDViewTableViewCell.className, for: indexPath) as! HUDViewTableViewCell
-            hudView = cell.hudView
+        case .hero:
+            let cell = tableView.dequeueReusableCell(withIdentifier: HeroStatusTableViewCell.className, for: indexPath) as! HeroStatusTableViewCell
+            heroStatusView = cell.heroView
 
             return cell
-        case .charts:
-            let cell = tableView.dequeueReusableCell(withIdentifier: ChartTableViewCell.className, for: indexPath) as! ChartTableViewCell
+        case .chart:
+            let cell = tableView.dequeueReusableCell(withIdentifier: GlucoseChartTableViewCell.className, for: indexPath) as! GlucoseChartTableViewCell
+            configureChartCell(cell)
 
-            switch ChartRow(rawValue: indexPath.row)! {
-            case .glucose:
-                cell.setChartGenerator(generator: { [weak self] (frame) in
-                    return self?.statusCharts.glucoseChart(withFrame: frame)?.view
-                })
-                cell.setTitleLabelText(label: NSLocalizedString("Glucose", comment: "The title of the glucose and prediction graph"))
-                cell.doesNavigate = automaticDosingStatus.automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled
-            case .iob:
-                cell.setChartGenerator(generator: { [weak self] (frame) in
-                    return self?.statusCharts.iobChart(withFrame: frame)?.view
-                })
-                cell.setTitleLabelText(label: NSLocalizedString("Active Insulin", comment: "The title of the Insulin On-Board graph"))
-            case .dose:
-                cell.setChartGenerator(generator: { [weak self] (frame) in
-                    return self?.statusCharts.doseChart(withFrame: frame)?.view
-                })
-                cell.setTitleLabelText(label: NSLocalizedString("Insulin Delivery", comment: "The title of the insulin delivery graph"))
-            case .cob:
-                cell.setChartGenerator(generator: { [weak self] (frame) in
-                    return self?.statusCharts.cobChart(withFrame: frame)?.view
-                })
-                cell.setTitleLabelText(label: NSLocalizedString("Active Carbohydrates", comment: "The title of the Carbs On-Board graph"))
-            }
+            return cell
+        case .stats:
+            let cell = tableView.dequeueReusableCell(withIdentifier: StatsTableViewCell.className, for: indexPath) as! StatsTableViewCell
+            configureStatsCell(cell)
 
-            self.tableView(tableView, updateSubtitleFor: cell, at: indexPath)
-
-            let alpha: CGFloat = charts.gestureRecognizer?.state == .possible ? 1 : 0
-            cell.setAlpha(alpha: alpha)
-
-            cell.setSubtitleTextColor(color: UIColor.secondaryLabel)
+            return cell
+        case .hud:
+            let cell = tableView.dequeueReusableCell(withIdentifier: HUDViewTableViewCell.className, for: indexPath) as! HUDViewTableViewCell
+            cell.backgroundColor = .clear
+            cell.hudView.backgroundColor = .clear
+            // One shared card behind sensor, loop ring, and pump, mirroring the
+            // bottom action bar; the pills drop their individual backgrounds
+            cell.hudView.cgmStatusHUD.showsBackground = false
+            cell.hudView.pumpStatusHUD.showsBackground = false
+            applyCardBackground(to: cell, cornerRadius: 20)
+            hudView = cell.hudView
 
             return cell
         case .status:
@@ -1060,18 +2110,19 @@ final class StatusTableViewController: LoopChartsTableViewController {
             func getTitleSubtitleCell() -> TitleSubtitleTableViewCell {
                 let cell = tableView.dequeueReusableCell(withIdentifier: TitleSubtitleTableViewCell.className, for: indexPath) as! TitleSubtitleTableViewCell
                 cell.selectionStyle = .none
-                cell.backgroundColor = .secondarySystemBackground
+                cell.backgroundColor = .clear
                 cell.titleLabel.text = nil
                 cell.subtitleLabel.text = nil
                 cell.accessoryView = nil
+                applyCardBackground(to: cell)
                 return cell
             }
 
-            switch StatusRow(rawValue: indexPath.row)! {
-            case .status:
-                switch statusRowMode {
+            switch statusRowMode(forRow: indexPath.row) {
                 case .hidden:
+                    // The permanent slot's idle state: fully invisible placeholder
                     let cell = getTitleSubtitleCell()
+                    cell.backgroundConfiguration = UIBackgroundConfiguration.clear()
                     return cell
                 case .scheduleOverrideEnabled(let override):
                     let cell = getTitleSubtitleCell()
@@ -1124,7 +2175,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
                     progressCell.totalUnits = dose.programmedUnits
                     progressCell.tintColor = .insulinTintColor
                     progressCell.deliveredUnits = bolusProgressReporter?.progress.deliveredUnits
-                    progressCell.backgroundColor = .secondarySystemBackground
+                    progressCell.backgroundColor = .clear
+                    applyCardBackground(to: progressCell)
+                    // Inset the nib content so it clears the rounded card edges
+                    progressCell.contentView.preservesSuperviewLayoutMargins = false
+                    progressCell.contentView.layoutMargins = UIEdgeInsets(top: 8, left: 44, bottom: 8, right: 40)
                     return progressCell
                 case .cancelingBolus:
                     let cell = getTitleSubtitleCell()
@@ -1150,7 +2205,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 case .onboardingSuspended:
                     let cell = tableView.dequeueReusableCell(withIdentifier: IconTitleSubtitleTableViewCell.className, for: indexPath) as! IconTitleSubtitleTableViewCell
                     cell.selectionStyle = .default
-                    cell.backgroundColor = .secondarySystemBackground
+                    cell.backgroundColor = .clear
+                    applyCardBackground(to: cell)
                     cell.iconImageView.image = UIImage(systemName: "exclamationmark.circle.fill")
                     cell.iconImageView.tintColor = .warning
                     cell.iconImageView.contentMode = .scaleAspectFit
@@ -1168,70 +2224,61 @@ final class StatusTableViewController: LoopChartsTableViewController {
                     imageView.tintColor = .glucoseTintColor
                     cell.accessoryView = imageView
                     return cell
-                }
+            }
+        case .actions:
+            switch ActionsRow(rawValue: indexPath.row)! {
+            case .primary:
+                let cell = tableView.dequeueReusableCell(withIdentifier: PrimaryActionsTableViewCell.className, for: indexPath) as! PrimaryActionsTableViewCell
+                configurePrimaryActionsCell(cell)
+
+                return cell
             }
         }
     }
 
-    private func tableView(_ tableView: UITableView, updateSubtitleFor cell: ChartTableViewCell, at indexPath: IndexPath) {
-        switch Section(rawValue: indexPath.section)! {
-        case .charts:
-            switch ChartRow(rawValue: indexPath.row)! {
-            case .glucose:
-                if let eventualGlucose = eventualGlucoseDescription {
-                    cell.setSubtitleLabel(label: String(format: NSLocalizedString("Eventually %@", comment: "The subtitle format describing eventual glucose. (1: localized glucose value description)"), eventualGlucose))
-                } else {
-                    cell.setSubtitleLabel(label: nil)
-                }
-                cell.doesNavigate = automaticDosingStatus.automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled
-            case .iob:
-                if let currentIOB = currentIOBDescription {
-                    cell.setSubtitleLabel(label: currentIOB)
-                } else {
-                    cell.setSubtitleLabel(label: nil)
-                }
-            case .dose:
-                let integerFormatter = NumberFormatter()
-                integerFormatter.maximumFractionDigits = 0
+    // MARK: - Bottom-aligned actions
 
-                if  let total = totalDelivery,
-                    let totalString = integerFormatter.string(from: total) {
-                    cell.setSubtitleLabel(label: String(format: NSLocalizedString("%@ U Total", comment: "The subtitle format describing total insulin. (1: localized insulin total)"), totalString))
-                } else {
-                    cell.setSubtitleLabel(label: nil)
-                }
-            case .cob:
-                if let currentCOB = currentCOBDescription {
-                    cell.setSubtitleLabel(label: currentCOB)
-                } else {
-                    cell.setSubtitleLabel(label: nil)
-                }
+    /// Height of an invisible footer placed before the actions section so the action buttons
+    /// sit along the bottom of the screen when the content is shorter than the table.
+    private var actionsBottomSpacerHeight: CGFloat = 0
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+
+        updateActionsBottomSpacer()
+    }
+
+    private func updateActionsBottomSpacer() {
+        let contentHeight = tableView.contentSize.height - actionsBottomSpacerHeight
+        let availableHeight = tableView.bounds.height - tableView.adjustedContentInset.top - tableView.adjustedContentInset.bottom
+        let newHeight = max(0, availableHeight - contentHeight)
+
+        if abs(newHeight - actionsBottomSpacerHeight) > 1 {
+            actionsBottomSpacerHeight = newHeight
+            UIView.performWithoutAnimation {
+                tableView.beginUpdates()
+                tableView.endUpdates()
             }
-        case .hud, .status, .alertWarning:
-            break
         }
+    }
+
+    override func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
+        guard Section(rawValue: section) == .status else {
+            return 0
+        }
+        return actionsBottomSpacerHeight
+    }
+
+    override func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
+        guard Section(rawValue: section) == .status else {
+            return nil
+        }
+        let spacer = UIView()
+        spacer.backgroundColor = .clear
+        return spacer
     }
 
     // MARK: - UITableViewDelegate
-
-    override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        switch Section(rawValue: indexPath.section)! {
-        case .charts:
-            // Compute the height of the HUD, defaulting to 70
-            let hudHeight = ceil(hudView?.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).height ?? 74)
-            var availableSize = max(tableView.bounds.width, tableView.bounds.height)
-            availableSize -= (tableView.safeAreaInsets.top + tableView.safeAreaInsets.bottom + hudHeight)
-
-            switch ChartRow(rawValue: indexPath.row)! {
-            case .glucose:
-                return max(106, 0.37 * availableSize)
-            case .iob, .dose, .cob:
-                return max(106, 0.21 * availableSize)
-            }
-        case .hud, .status, .alertWarning:
-            return UITableView.automaticDimension
-        }
-    }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         switch Section(rawValue: indexPath.section)! {
@@ -1243,14 +2290,17 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 tableView.deselectRow(at: indexPath, animated: true)
                 presentUnmuteAlertConfirmation()
             }
-        case .hud:
+        case .chart:
+            tableView.deselectRow(at: indexPath, animated: true)
+            if automaticDosingStatus.automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled {
+                performSegue(withIdentifier: PredictionTableViewController.className, sender: indexPath)
+            }
+        case .hero, .stats, .hud, .actions:
             break
         case .status:
-            switch StatusRow(rawValue: indexPath.row)! {
-            case .status:
                 tableView.deselectRow(at: indexPath, animated: true)
 
-                switch statusRowMode {
+                switch statusRowMode(forRow: indexPath.row) {
                 case .pumpSuspended(let resuming) where !resuming:
                     updateBannerAndHUDandStatusRows(statusRowMode: .pumpSuspended(resuming: true) , newSize: nil, animated: true)
                     deviceManager.pumpManager?.resumeDelivery() { (error) in
@@ -1274,7 +2324,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                     case .preMeal, .legacyWorkout:
                         break
                     default:
-                        let vc = AddEditOverrideTableViewController(glucoseUnit: statusCharts.glucose.glucoseUnit)
+                        let vc = AddEditOverrideTableViewController(glucoseUnit: deviceManager.displayGlucosePreference.unit)
                         vc.inputMode = .editOverride(override)
                         vc.delegate = self
                         show(vc, sender: tableView.cellForRow(at: indexPath))
@@ -1304,18 +2354,6 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 default:
                     break
                 }
-            }
-        case .charts:
-            switch ChartRow(rawValue: indexPath.row)! {
-            case .glucose:
-                if automaticDosingStatus.automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled {
-                    performSegue(withIdentifier: PredictionTableViewController.className, sender: indexPath)
-                }
-            case .iob, .dose:
-                performSegue(withIdentifier: InsulinDeliveryTableViewController.className, sender: indexPath)
-            case .cob:
-                performSegue(withIdentifier: CarbAbsorptionViewController.className, sender: indexPath)
-            }
         }
     }
 
@@ -1380,7 +2418,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 vc.scheduledOverride = deviceManager.loopManager.settings.scheduleOverride
             }
             vc.presets = deviceManager.loopManager.settings.overridePresets
-            vc.glucoseUnit = statusCharts.glucose.glucoseUnit
+            vc.glucoseUnit = deviceManager.displayGlucosePreference.unit
             vc.overrideHistory = deviceManager.loopManager.overrideHistory.getEvents()
             vc.delegate = self
         case let vc as PredictionTableViewController:
@@ -1408,7 +2446,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
             let bolusEntryView = SimpleBolusView(viewModel: viewModel).environmentObject(deviceManager.displayGlucosePreference)
             let hostingController = DismissibleHostingController(rootView: bolusEntryView, isModalInPresentation: false)
             navigationWrapper = UINavigationController(rootViewController: hostingController)
-            hostingController.navigationItem.leftBarButtonItem = UIBarButtonItem(title: NSLocalizedString("Cancel", comment: ""), style: .plain, target: navigationWrapper, action: #selector(dismissWithAnimation))
+            // A titled item renders as the word "Cancel"; the system .cancel item draws as an X on iOS 26+
+            hostingController.navigationItem.leftBarButtonItem = UIBarButtonItem(title: NSLocalizedString("Cancel", comment: "Button label for cancel"), style: .plain, target: navigationWrapper, action: #selector(dismissWithAnimation))
             present(navigationWrapper, animated: true)
         } else {
             let viewModel = CarbEntryViewModel(delegate: deviceManager)
@@ -1467,7 +2506,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
         )
         
         let navigationWrapper = UINavigationController(rootViewController: hostingController)
-        hostingController.navigationItem.leftBarButtonItem = UIBarButtonItem(title: NSLocalizedString("Cancel", comment: ""), style: .plain, target: navigationWrapper, action: #selector(dismissWithAnimation))
+        // A titled item renders as the word "Cancel"; the system .cancel item draws as an X on iOS 26+
+        hostingController.navigationItem.leftBarButtonItem = UIBarButtonItem(title: NSLocalizedString("Cancel", comment: "Button label for cancel"), style: .plain, target: navigationWrapper, action: #selector(dismissWithAnimation))
         present(navigationWrapper, animated: true)
         deviceManager.analyticsServicesManager.didDisplayBolusScreen()
     }
@@ -1540,7 +2580,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             }
         } else {
             if FeatureFlags.sensitivityOverridesEnabled {
-                performSegue(withIdentifier: OverrideSelectionViewController.className, sender: workoutItem)
+                performSegue(withIdentifier: OverrideSelectionViewController.className, sender: nil)
             } else {
                 presentWorkoutModeAlertController()
             }
@@ -1671,9 +2711,36 @@ final class StatusTableViewController: LoopChartsTableViewController {
         updatePresetModeAvailability(automaticDosingEnabled: automaticDosingEnabled)
         hudView?.loopCompletionHUD.loopIconClosed = automaticDosingEnabled
         hudView?.loopCompletionHUD.closedLoopDisallowedLocalizedDescription = deviceManager.closedLoopDisallowedLocalizedDescription
+        heroStatusView?.loopCompletionHUD.loopIconClosed = automaticDosingEnabled
+        heroStatusView?.loopCompletionHUD.closedLoopDisallowedLocalizedDescription = deviceManager.closedLoopDisallowedLocalizedDescription
     }
 
     // MARK: - HUDs
+
+    private let gradientBackgroundView = GradientBackgroundView()
+
+    private var heroStatusView: StatusHeroView? {
+        didSet {
+            guard let heroStatusView = heroStatusView, heroStatusView != oldValue else {
+                return
+            }
+
+            heroStatusView.loopCompletionHUD.stateColors = .loopStatus
+            heroStatusView.loopCompletionHUD.loopIconClosed = automaticDosingStatus.automaticDosingEnabled
+            heroStatusView.loopCompletionHUD.closedLoopDisallowedLocalizedDescription = deviceManager.closedLoopDisallowedLocalizedDescription
+            heroStatusView.loopCompletionHUD.lastLoopCompleted = deviceManager.loopManager.lastLoopCompleted
+
+            heroStatusView.headerTitle = NSLocalizedString("Glucose Now", comment: "The title of the status screen glucose hero card")
+            heroStatusView.infoButtonTapped = { [weak self] in
+                // Opens the insulin delivery history (all boluses and doses)
+                self?.performSegue(withIdentifier: InsulinDeliveryTableViewController.className, sender: nil)
+            }
+
+            refreshContext.update(with: .status)
+            log.debug("[reloadData] after heroStatusView loaded")
+            reloadData()
+        }
+    }
 
     @IBOutlet var hudView: StatusBarHUDView? {
         didSet {
@@ -1695,6 +2762,10 @@ final class StatusTableViewController: LoopChartsTableViewController {
             configureCGMManagerHUDViews()
 
             // when HUD view is initialized, update loop completion HUD (e.g., icon and last loop completed)
+            // Equal halves for the sensor and pump sides, so their lifecycle bars and
+            // text zones match in width
+            hudView.cgmStatusHUD.widthAnchor.constraint(equalTo: hudView.pumpStatusHUD.widthAnchor).isActive = true
+
             hudView.loopCompletionHUD.stateColors = .loopStatus
             hudView.loopCompletionHUD.loopIconClosed = automaticDosingStatus.automaticDosingEnabled
             hudView.loopCompletionHUD.lastLoopCompleted = deviceManager.loopManager.lastLoopCompleted
@@ -1702,7 +2773,10 @@ final class StatusTableViewController: LoopChartsTableViewController {
             hudView.cgmStatusHUD.stateColors = .cgmStatus
             hudView.cgmStatusHUD.tintColor = .label
             hudView.pumpStatusHUD.stateColors = .pumpStatus
-            hudView.pumpStatusHUD.tintColor = .insulinTintColor
+            hudView.pumpStatusHUD.tintColor = .pumpStatusNormal
+            // The pod pill shows expiration instead of the basal dial; net basal
+            // lives in the stats card
+            hudView.pumpStatusHUD.showsBasalRate = false
 
             refreshContext.update(with: .status)
             log.debug("[reloadData] after hudView loaded")
@@ -1721,12 +2795,13 @@ final class StatusTableViewController: LoopChartsTableViewController {
             }
             hudView.pumpStatusHUD.presentStatusHighlight(deviceManager.pumpStatusHighlight)
             hudView.pumpStatusHUD.lifecycleProgress = deviceManager.pumpLifecycleProgress
+            updatePodExpiration(on: hudView)
         }
     }
 
     private func configureCGMManagerHUDViews() {
         if let hudView = hudView {
-            hudView.cgmStatusHUD.presentStatusHighlight(deviceManager.cgmStatusHighlight)
+            hudView.cgmStatusHUD.presentStatusHighlight(deviceManager.cgmStatusHighlight ?? SensorOKStatusHighlight())
             hudView.cgmStatusHUD.lifecycleProgress = deviceManager.cgmLifecycleProgress
         }
     }
@@ -1777,15 +2852,15 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
     @objc private func pumpStatusTapped(_ sender: UIGestureRecognizer) {
         if let pumpStatusView = sender.view as? PumpStatusHUDView {
-            executeHUDTapAction(deviceManager.didTapOnPumpStatus(pumpStatusView.pumpManagerProvidedHUD), from: sender.view)
+            executeHUDTapAction(deviceManager.didTapOnPumpStatus(pumpStatusView.pumpManagerProvidedHUD))
         }
     }
 
     @objc private func cgmStatusTapped( _ sender: UIGestureRecognizer) {
-        executeHUDTapAction(deviceManager.didTapOnCGMStatus(), from: sender.view)
+        executeHUDTapAction(deviceManager.didTapOnCGMStatus())
     }
 
-    private func executeHUDTapAction(_ action: HUDTapAction?, from sourceView: UIView?) {
+    private func executeHUDTapAction(_ action: HUDTapAction?) {
         guard let action = action else {
             return
         }
@@ -1798,15 +2873,15 @@ final class StatusTableViewController: LoopChartsTableViewController {
         case .openAppURL(let url):
             UIApplication.shared.open(url)
         case .setupNewCGM:
-            addNewCGMManager(from: sourceView)
+            addNewCGMManager()
         case .setupNewPump:
-            addNewPumpManager(from: sourceView)
+            addNewPumpManager()
         default:
             return
         }
     }
 
-    private func addNewPumpManager(from sourceView: UIView?) {
+    private func addNewPumpManager() {
         let availablePumpManagers = deviceManager.availablePumpManagers
 
         switch availablePumpManagers.count {
@@ -1818,13 +2893,12 @@ final class StatusTableViewController: LoopChartsTableViewController {
             let alert = UIAlertController(availablePumpManagers: availablePumpManagers) { [weak self] (identifier) in
                 self?.addPumpManager(withIdentifier: identifier)
             }
-            alert.popoverPresentationController?.sourceView = sourceView ?? view
-            alert.popoverPresentationController?.sourceRect = sourceView?.bounds ?? view.bounds
+            alert.addCancelAction { _ in }
             present(alert, animated: true, completion: nil)
         }
     }
 
-    private func addNewCGMManager(from sourceView: UIView?) {
+    private func addNewCGMManager() {
         let availableCGMManagers = deviceManager.availableCGMManagers
 
         switch availableCGMManagers.count {
@@ -1836,8 +2910,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
             let alert = UIAlertController(availableCGMManagers: availableCGMManagers) { [weak self] identifier in
                 self?.addCGMManager(withIdentifier: identifier)
             }
-            alert.popoverPresentationController?.sourceView = sourceView ?? view
-            alert.popoverPresentationController?.sourceRect = sourceView?.bounds ?? view.bounds
+            alert.addCancelAction { _ in }
             present(alert, animated: true, completion: nil)
         }
     }
@@ -1941,10 +3014,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
             let rightSwipe = UISwipeGestureRecognizer(target: self, action: #selector(stepActiveScenarioBackward))
             rightSwipe.direction = .right
 
-            if let toolBar = navigationController?.toolbar {
-                toolBar.addGestureRecognizer(leftSwipe)
-                toolBar.addGestureRecognizer(rightSwipe)
-            }
+            tableView.addGestureRecognizer(leftSwipe)
+            tableView.addGestureRecognizer(rightSwipe)
         }
     }
 

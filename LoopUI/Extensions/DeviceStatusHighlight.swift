@@ -22,9 +22,9 @@ extension DeviceStatusElementState {
     public var color: UIColor {
         switch self {
         case .normalCGM:
-            return .glucose
+            return .pumpStatusNormal
         case .normalPump:
-            return .insulin
+            return .pumpStatusNormal
         case .warning:
             return .warning
         case .critical:

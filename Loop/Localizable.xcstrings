@@ -938,8 +938,12 @@
         }
       }
     },
+    "%@ U" : {
+      "comment" : "The format string describing the net basal rate. (1: localized basal rate value)"
+    },
     "%@ U Total" : {
       "comment" : "The subtitle format describing total insulin. (1: localized insulin total)",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -1462,6 +1466,9 @@
           }
         }
       }
+    },
+    "%1$@ · %2$@" : {
+      "comment" : "The caption describing the last bolus below active insulin. (1: localized insulin amount)(2: localized time)"
     },
     "%1$@ %2$@" : {
       "comment" : "Format string combining carb entry quantity and absorption time emoji",
@@ -4447,6 +4454,7 @@
     },
     "Active Carbohydrates" : {
       "comment" : "The title of the Carbs On-Board graph",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -4703,7 +4711,7 @@
       }
     },
     "Active Carbs" : {
-      "comment" : "Title describing quantity of still-absorbing carbohydrates",
+      "comment" : "The title of the active carbs stats column\nTitle describing quantity of still-absorbing carbohydrates",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -4828,7 +4836,7 @@
       }
     },
     "Active Insulin" : {
-      "comment" : "Details for missing data error when active insulin amount is missing\nThe title of the Insulin On-Board graph\nTitle describing quantity of still-absorbing insulin",
+      "comment" : "Details for missing data error when active insulin amount is missing\nThe title of the active insulin stats column\nTitle describing quantity of still-absorbing insulin",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -5484,6 +5492,7 @@
     },
     "Add Meal" : {
       "comment" : "The label of the carb entry button",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -8685,6 +8694,9 @@
         }
       }
     },
+    "Basal" : {
+      "comment" : "The title of the basal stats column"
+    },
     "Basal Rate Schedule" : {
       "comment" : "Details for configuration error when basal rate schedule is missing",
       "localizations" : {
@@ -9412,7 +9424,7 @@
       }
     },
     "Bolus" : {
-      "comment" : "Label for bolus entry row on bolus screen\nLabel for bolus entry row on simple bolus screen\nThe label of the bolus entry button\nTitle for bolus entry screen",
+      "comment" : "Label for bolus entry row on bolus screen\nLabel for bolus entry row on simple bolus screen\nThe label of the bolus action button\nTitle for bolus entry screen",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -11297,6 +11309,9 @@
           }
         }
       }
+    },
+    "Carbs" : {
+      "comment" : "The label of the carb entry action button"
     },
     "Carbs Absorbed (g) ÷ Carb Ratio (g/U) × Insulin Sensitivity (%1$@/U)" : {
       "comment" : "Description of the prediction input effect for carbohydrates. (1: The glucose unit string)",
@@ -19299,6 +19314,9 @@
         }
       }
     },
+    "Failed to Suspend Insulin Delivery" : {
+      "comment" : "The alert title for a suspend error"
+    },
     "Favorite Foods" : {
       "comment" : "Label for Favorite Foods icon in Settings\nTitle for Favorite Foods view",
       "localizations" : {
@@ -20457,7 +20475,7 @@
       }
     },
     "Glucose" : {
-      "comment" : "The title of the glucose and prediction graph\nTitle for predicted glucose chart on bolus screen",
+      "comment" : "Title for predicted glucose chart on bolus screen",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -20586,6 +20604,9 @@
           }
         }
       }
+    },
+    "Glucose – Last 3 Hours" : {
+      "comment" : "The title of the status screen glucose chart card"
     },
     "Glucose Based Partial Application" : {
       "comment" : "Title for glucose based partial application experiment description\nTitle of glucose based partial application experiment",
@@ -21239,6 +21260,9 @@
           }
         }
       }
+    },
+    "Glucose Now" : {
+      "comment" : "The title of the status screen glucose hero card"
     },
     "Glucose Target Range Schedule" : {
       "comment" : "Details for configuration error when glucose target range schedule is missing",
@@ -22464,6 +22488,7 @@
     },
     "Insulin Delivery" : {
       "comment" : "The title of the insulin delivery graph",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -27439,6 +27464,9 @@
         }
       }
     },
+    "More" : {
+      "comment" : "The label of the more actions button"
+    },
     "More Info" : {
       "comment" : "Text for more info action on notification of upcoming TestFlight expiration\nText for more info action on notification of upcoming profile expiration",
       "localizations" : {
@@ -30310,8 +30338,12 @@
         }
       }
     },
+    "Pre-Meal" : {
+      "comment" : "The label of the pre-meal action button"
+    },
     "Pre-Meal Targets" : {
       "comment" : "The label of the pre-meal mode toggle button",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -31274,6 +31306,9 @@
           }
         }
       }
+    },
+    "Preset" : {
+      "comment" : "The label of the preset action button"
     },
     "Profile Expiration" : {
       "comment" : "Settings App Profile expiration view",
@@ -34739,6 +34774,9 @@
         }
       }
     },
+    "Sensor\nActive" : {
+      "comment" : "Sensor status shown when the CGM has nothing to report"
+    },
     "Sensor Failed" : {
       "localizations" : {
         "da" : {
@@ -34923,7 +34961,7 @@
       }
     },
     "Settings" : {
-      "comment" : "Label of button that navigation user to iOS Settings\nSettings screen title\nThe label of the settings button",
+      "comment" : "Label of button that navigation user to iOS Settings\nSettings screen title\nThe label of the settings action button",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -36212,6 +36250,12 @@
         }
       }
     },
+    "Suspend" : {
+      "comment" : "The label of the suspend insulin delivery action button\nThe title of the action used to suspend insulin delivery"
+    },
+    "Suspend Insulin Delivery?" : {
+      "comment" : "The alert title for suspend insulin confirmation"
+    },
     "Suspend Threshold" : {
       "comment" : "The title text in settings",
       "extractionState" : "manual",
@@ -37149,6 +37193,9 @@
           }
         }
       }
+    },
+    "Target Range" : {
+      "comment" : "Caption on the glucose chart target range band"
     },
     "TestFlight" : {
       "comment" : "Settings app TestFlight section",
@@ -38278,6 +38325,9 @@
           }
         }
       }
+    },
+    "The pump will stop delivering insulin until you resume. Loop will not adjust your dosing while delivery is suspended." : {
+      "comment" : "The alert body for suspend insulin confirmation"
     },
     "Therapy Settings" : {
       "comment" : "Title text for button to Therapy Settings",
@@ -41878,6 +41928,7 @@
     },
     "Workout Targets" : {
       "comment" : "The label of the workout mode toggle button",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
