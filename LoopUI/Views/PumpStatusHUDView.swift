@@ -12,7 +12,7 @@ import LoopKit
 import LoopKitUI
 
 public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
-    
+
     @IBOutlet public weak var basalRateHUD: BasalRateHUDView!
 
     @IBOutlet public weak var pumpManagerProvidedHUD: BaseHUDView!
@@ -21,49 +21,52 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
         return 3
     }
 
-    /// Hides the basal rate dial, freeing the space for the expiration label
+    /// Hides the basal rate dial, freeing the space for the expiration text
     public var showsBasalRate: Bool = true {
         didSet {
             basalRateHUD?.isHidden = !showsBasalRate
         }
     }
 
-    /// A small label shown alongside the pump manager's HUD (e.g. pod expiration),
-    /// styled to match the status highlight message
-    public let expirationLabel: UILabel = {
-        let label = UILabel()
-        // Matches the status screen's card title font ("Glucose – Last 3 Hours")
-        label.font = .systemFont(ofSize: 13, weight: .semibold)
-        // Same muted tone as the hero card's "Eventually …" caption
-        label.textColor = .secondaryLabel
-        label.numberOfLines = 2
-        // The text hugs the pod icon, mirroring the sensor side's icon-hugging text
-        label.textAlignment = .right
-        label.adjustsFontSizeToFitWidth = true
-        label.minimumScaleFactor = 0.8
-        label.isHidden = true
-        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        return label
+    /// The device caption also heads the expiration text ("Pod" / "1 day" / "5 hrs left")
+    override public var deviceCaption: String? {
+        didSet {
+            expirationView.captionLabel.text = deviceCaption
+            expirationView.captionLabel.isHidden = deviceCaption?.isEmpty ?? true
+        }
+    }
+
+    /// Time remaining shown alongside the pump manager's HUD (e.g. pod expiration),
+    /// right-aligned so the text hugs the pod icon on its trailing side
+    public let expirationView: DeviceDetailTextView = {
+        let view = DeviceDetailTextView()
+        view.textAlignment = .right
+        view.isHidden = true
+        return view
     }()
 
-    /// Sets the expiration text; nil hides the label
-    public func setExpiration(text: String?) {
-        expirationLabel.text = text
+    private var hasExpiration = false
+
+    /// Sets the expiration headline ("1 day") and detail ("5 hrs 31 min left");
+    /// a nil headline hides the text
+    public func setExpiration(headline: String?, detail: String?) {
+        hasExpiration = headline != nil
+        expirationView.configure(caption: deviceCaption, headline: headline, detail: detail)
         updateExpirationVisibility()
     }
 
     private func updateExpirationVisibility() {
-        expirationLabel.isHidden = expirationLabel.text == nil || statusStackView.arrangedSubviews.contains(statusHighlightView)
+        expirationView.isHidden = !hasExpiration || statusStackView.arrangedSubviews.contains(statusHighlightView)
     }
 
     override public func awakeFromNib() {
         super.awakeFromNib()
 
-        // The expiration label sits where the basal dial was, before the pod view
+        // The expiration text sits where the basal dial was, before the pod view
         if let basalIndex = statusStackView.arrangedSubviews.firstIndex(of: basalRateHUD) {
-            statusStackView.insertArrangedSubview(expirationLabel, at: basalIndex + 1)
+            statusStackView.insertArrangedSubview(expirationView, at: basalIndex + 1)
         } else {
-            statusStackView.addArrangedSubview(expirationLabel)
+            statusStackView.addArrangedSubview(expirationView)
         }
 
         // Pull the pod (and the text hugging it) toward the outer edge so its
@@ -74,27 +77,32 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
 
         // The pod graphic is drawn centered within a wider view; shift the text into
         // that empty margin so it hugs the visible pod like the sensor text hugs its icon
-        expirationLabel.transform = CGAffineTransform(translationX: 20, y: 0)
+        expirationView.transform = CGAffineTransform(translationX: Self.podOutwardShift + 6, y: 0)
     }
-    
+
+    /// Horizontal nudge of the pod graphic (and its text) so the pod sits as far inside
+    /// the card's edge as the sensor icon does on the opposite side
+    private static let podOutwardShift: CGFloat = -6
+
     public override init(frame: CGRect) {
         super.init(frame: frame)
         setup()
     }
-    
+
     public required init?(coder aDecoder: NSCoder) {
         super.init(coder: aDecoder)
         setup()
     }
-    
+
     override func setup() {
         super.setup()
         statusHighlightView.setIconPosition(.left)
+        deviceCaption = LocalizedString("Pump", comment: "Default caption naming the pump in the status bar pill")
     }
-    
+
     public override func tintColorDidChange() {
         super.tintColorDidChange()
-        
+
         basalRateHUD.tintColor = tintColor
     }
 
@@ -102,13 +110,13 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
         guard !statusStackView.arrangedSubviews.contains(statusHighlightView) else {
             return
         }
-        
+
         // need to also hide these view, since they will be added back to the stack at some point
         basalRateHUD.isHidden = true
         statusStackView.removeArrangedSubview(basalRateHUD)
 
-        expirationLabel.isHidden = true
-        statusStackView.removeArrangedSubview(expirationLabel)
+        expirationView.isHidden = true
+        statusStackView.removeArrangedSubview(expirationView)
 
         if let pumpManagerProvidedHUD = pumpManagerProvidedHUD {
             pumpManagerProvidedHUD.isHidden = true
@@ -117,18 +125,18 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
 
         super.presentStatusHighlight()
     }
-    
+
     override public func dismissStatusHighlight() {
         guard statusStackView.arrangedSubviews.contains(statusHighlightView) else {
             return
         }
-        
+
         super.dismissStatusHighlight()
 
         statusStackView.addArrangedSubview(basalRateHUD)
         basalRateHUD.isHidden = !showsBasalRate
 
-        statusStackView.addArrangedSubview(expirationLabel)
+        statusStackView.addArrangedSubview(expirationView)
         updateExpirationVisibility()
 
         if let pumpManagerProvidedHUD = pumpManagerProvidedHUD {
@@ -136,19 +144,20 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
             pumpManagerProvidedHUD.isHidden = false
         }
     }
-    
+
     public func removePumpManagerProvidedHUD() {
         guard let pumpManagerProvidedHUD = pumpManagerProvidedHUD else {
             return
         }
-        
+
         statusStackView.removeArrangedSubview(pumpManagerProvidedHUD)
         pumpManagerProvidedHUD.removeFromSuperview()
     }
-    
+
     public func addPumpManagerProvidedHUDView(_ pumpManagerProvidedHUD: BaseHUDView) {
         self.pumpManagerProvidedHUD = pumpManagerProvidedHUD
         statusStackView.addArrangedSubview(self.pumpManagerProvidedHUD)
+        self.pumpManagerProvidedHUD.transform = CGAffineTransform(translationX: Self.podOutwardShift, y: 0)
     }
-    
+
 }

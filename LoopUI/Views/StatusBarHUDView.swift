@@ -24,7 +24,7 @@ public class StatusBarHUDView: UIView, NibLoadable {
             if adjustViewsForNarrowDisplay != oldValue {
                 cgmStatusHUD.adjustViewsForNarrowDisplay = adjustViewsForNarrowDisplay
                 pumpStatusHUD.adjustViewsForNarrowDisplay = adjustViewsForNarrowDisplay
-                containerView.spacing = adjustViewsForNarrowDisplay ? 8.0 : 16.0
+                containerView.spacing = adjustViewsForNarrowDisplay ? Self.narrowSectionSpacing : Self.sectionSpacing
             }
         }
     }
@@ -51,6 +51,12 @@ public class StatusBarHUDView: UIView, NibLoadable {
         containerView.translatesAutoresizingMaskIntoConstraints = false
         self.addSubview(containerView)
 
+        // Hairline dividers separate the sensor, loop, and pump sections of the shared card.
+        // Spacing is tight so the two device pills keep room for their three-line text.
+        containerView.spacing = Self.sectionSpacing
+        containerView.insertArrangedSubview(makeDivider(), at: 1)
+        containerView.insertArrangedSubview(makeDivider(), at: 3)
+
         // Use AutoLayout to have the stack view fill its entire container.
         NSLayoutConstraint.activate([
             containerView.centerXAnchor.constraint(equalTo: centerXAnchor),
@@ -62,6 +68,31 @@ public class StatusBarHUDView: UIView, NibLoadable {
         self.backgroundColor = UIColor.secondarySystemBackground
     }
         
+    private static let sectionSpacing: CGFloat = 8
+    private static let narrowSectionSpacing: CGFloat = 6
+
+    /// A one-point vertical line, shorter than the card so it reads as a soft separator
+    private func makeDivider() -> UIView {
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.setContentHuggingPriority(.required, for: .horizontal)
+        container.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let line = UIView()
+        line.backgroundColor = UIColor.separator.withAlphaComponent(0.6)
+        line.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(line)
+
+        NSLayoutConstraint.activate([
+            container.widthAnchor.constraint(equalToConstant: 1),
+            line.widthAnchor.constraint(equalToConstant: 1),
+            line.heightAnchor.constraint(equalTo: container.heightAnchor, multiplier: 0.6),
+            line.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            line.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+        ])
+        return container
+    }
+
     public func removePumpManagerProvidedView() {
         pumpStatusHUD.removePumpManagerProvidedHUD()
     }

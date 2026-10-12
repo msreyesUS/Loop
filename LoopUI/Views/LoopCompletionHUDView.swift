@@ -54,8 +54,30 @@ public final class LoopCompletionHUDView: BaseHUDView {
         }
     }
 
+    /// A one-word loop status under the ring in the status bar ("Connected", "Open Loop",
+    /// "12 min ago"); nil for the hero ring, which has no room for it
+    private var statusLabel: UILabel?
+
     override public func awakeFromNib() {
         super.awakeFromNib()
+
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.textAlignment = .center
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.7
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        let bottomConstraint = label.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -4)
+        bottomConstraint.priority = UILayoutPriority(999)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: loopStateView.bottomAnchor, constant: 6),
+            label.centerXAnchor.constraint(equalTo: centerXAnchor),
+            label.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            bottomConstraint,
+        ])
+        statusLabel = label
 
         updateDisplay(nil)
     }
@@ -63,6 +85,37 @@ public final class LoopCompletionHUDView: BaseHUDView {
     public var loopIconClosed = false {
         didSet {
             loopStateView.open = !loopIconClosed
+            updateStatusLabel()
+        }
+    }
+
+    private func updateStatusLabel() {
+        guard let statusLabel = statusLabel else { return }
+
+        guard let lastLoopCompleted = lastLoopCompleted else {
+            statusLabel.text = LocalizedString("Waiting", comment: "Status bar loop status before the first loop has run")
+            statusLabel.textColor = .secondaryLabel
+            return
+        }
+
+        switch freshness {
+        case .fresh:
+            if loopIconClosed {
+                statusLabel.text = LocalizedString("Connected", comment: "Status bar loop status when closed loop is running and fresh")
+                statusLabel.textColor = stateColors?.normal ?? .systemGreen
+            } else {
+                statusLabel.text = LocalizedString("Open Loop", comment: "Status bar loop status when the loop is open")
+                statusLabel.textColor = .secondaryLabel
+            }
+        case .aging, .stale:
+            // A loop that hasn't completed recently reads as its age, in the ring's color
+            let ago = abs(min(0, lastLoopCompleted.timeIntervalSinceNow))
+            if let timeString = timeAgoFormatter.string(from: ago) {
+                statusLabel.text = String(format: LocalizedString("%@ ago", comment: "Format string describing the time interval since the last completion date. (1: The localized date components"), timeString)
+            } else {
+                statusLabel.text = "–"
+            }
+            statusLabel.textColor = freshness == .aging ? (stateColors?.warning ?? .warning) : (stateColors?.error ?? .critical)
         }
     }
 
@@ -98,6 +151,7 @@ public final class LoopCompletionHUDView: BaseHUDView {
     override public func stateColorsDidUpdate() {
         super.stateColorsDidUpdate()
         updateTintColor()
+        updateStatusLabel()
     }
 
     private func updateTintColor() {
@@ -224,6 +278,8 @@ public final class LoopCompletionHUDView: BaseHUDView {
         } else {
             accessibilityHint = LocalizedString("Open loop", comment: "Accessbility hint describing completion HUD for an open loop")
         }
+
+        updateStatusLabel()
     }
 
     override public func didMoveToWindow() {

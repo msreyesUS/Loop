@@ -49,6 +49,7 @@ public final class CGMStatusHUDView: DeviceStatusHUDView, NibLoadable {
         // Icon leads, mirroring the pump pill's trailing pod icon; rendered slightly larger
         statusHighlightView.setIconPosition(.left)
         statusHighlightView.icon.transform = CGAffineTransform(scaleX: 1.15, y: 1.15)
+        deviceCaption = LocalizedString("Sensor", comment: "Caption naming the CGM sensor in the status bar pill")
         viewModel = CGMStatusHUDViewModel(staleGlucoseValueHandler: { [weak self] in
             self?.updateDisplay()
         })
@@ -57,13 +58,10 @@ public final class CGMStatusHUDView: DeviceStatusHUDView, NibLoadable {
     override public func awakeFromNib() {
         super.awakeFromNib()
 
-        // Mirror the lifecycle bar so it fills toward the pill's outer (leading) edge,
-        // the reverse of the pump pill's bar; keep the shared vertical lift
-        progressView.transform = CGAffineTransform(translationX: 0, y: -7).scaledBy(x: -1, y: 1)
-
-        // Inset the icon-and-text group from the card edge, matching the pod's padding
+        // Inset the icon-and-text group from the card edge so the icon starts where
+        // the lifecycle bar does
         statusStackView.isLayoutMarginsRelativeArrangement = true
-        statusStackView.layoutMargins.left = 14
+        statusStackView.layoutMargins.left = 10
     }
     
     override public func tintColorDidChange() {

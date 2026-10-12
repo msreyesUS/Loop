@@ -883,8 +883,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
     /// Shows the time remaining until pod expiration in the pump pill, derived from the
     /// lifecycle progress. The pod's progress reports the REMAINING fraction of its
-    /// 72-hour nominal life. Units zero out rather than drop as time drains,
-    /// e.g. "0 days\n0 hrs 52 min".
+    /// 72-hour nominal life. Units zero out rather than drop as time drains, e.g.
+    /// headline "0 days" with detail "0 hrs 52 min left".
     private func updatePodExpiration(on hudView: StatusBarHUDView) {
         if let progress = deviceManager.pumpLifecycleProgress, progress.percentComplete > 0 {
             let nominalPodLife = TimeInterval(hours: 72)
@@ -893,10 +893,20 @@ final class StatusTableViewController: LoopChartsTableViewController {
             let days = totalMinutes / (24 * 60)
             let hours = (totalMinutes % (24 * 60)) / 60
             let minutes = totalMinutes % 60
-            hudView.pumpStatusHUD.setExpiration(text: "\(days) days\n\(hours) hrs \(minutes) min")
+            let dayUnit = days == 1 ? "day" : "days"
+            let hourUnit = hours == 1 ? "hr" : "hrs"
+            hudView.pumpStatusHUD.setExpiration(headline: "\(days) \(dayUnit)", detail: "\(hours) \(hourUnit) \(minutes) min left")
         } else {
-            hudView.pumpStatusHUD.setExpiration(text: nil)
+            hudView.pumpStatusHUD.setExpiration(headline: nil, detail: nil)
         }
+    }
+
+    /// The pump pill's caption: "Pod" for Omnipod systems, otherwise the generic "Pump"
+    private var pumpDeviceCaption: String {
+        if deviceManager.pumpManager?.pluginIdentifier.hasPrefix("Omni") == true {
+            return NSLocalizedString("Pod", comment: "Caption naming an Omnipod in the status bar pill")
+        }
+        return NSLocalizedString("Pump", comment: "Caption naming a generic pump in the status bar pill")
     }
 
     private lazy var netBasalFormatter: NumberFormatter = {
@@ -2834,6 +2844,7 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 }
                 pumpManagerHUDProvider.visible = active && onscreen
             }
+            hudView.pumpStatusHUD.deviceCaption = pumpDeviceCaption
             hudView.pumpStatusHUD.presentStatusHighlight(deviceManager.pumpStatusHighlight)
             hudView.pumpStatusHUD.lifecycleProgress = deviceManager.pumpLifecycleProgress
             updatePodExpiration(on: hudView)

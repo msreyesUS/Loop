@@ -1707,6 +1707,9 @@
         }
       }
     },
+    "Connected" : {
+      "comment" : "Status bar loop status when closed loop is running and fresh"
+    },
     "dB" : {
       "comment" : "The short unit display string for decibles",
       "localizations" : {
@@ -3078,6 +3081,12 @@
         }
       }
     },
+    "Open Loop" : {
+      "comment" : "Status bar loop status when the loop is open"
+    },
+    "Pump" : {
+      "comment" : "Default caption naming the pump in the status bar pill"
+    },
     "QUANTITY_VALUE_AND_UNIT" : {
       "comment" : "Format string for combining localized numeric value and unit. (1: numeric value)(2: unit)",
       "extractionState" : "extracted_with_value",
@@ -3203,6 +3212,9 @@
           }
         }
       }
+    },
+    "Sensor" : {
+      "comment" : "Caption naming the CGM sensor in the status bar pill"
     },
     "Tap Settings to toggle Closed Loop ON if you wish for the app to automate your insulin." : {
       "comment" : "Instructions for user to close loop if it is allowed.",
@@ -3530,6 +3542,9 @@
           }
         }
       }
+    },
+    "Waiting" : {
+      "comment" : "Status bar loop status before the first loop has run"
     },
     "Waiting for first run" : {
       "comment" : "Accessibility label describing completion HUD waiting for first run",

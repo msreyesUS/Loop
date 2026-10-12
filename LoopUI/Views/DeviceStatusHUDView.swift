@@ -16,6 +16,14 @@ import LoopKitUI
     var statusHighlightView: StatusHighlightHUDView! {
         didSet {
             statusHighlightView.isHidden = true
+            statusHighlightView.caption = deviceCaption
+        }
+    }
+
+    /// Names the device for the pill's caption line ("Sensor", "Pod")
+    public var deviceCaption: String? {
+        didSet {
+            statusHighlightView?.caption = deviceCaption
         }
     }
     
@@ -127,19 +135,9 @@ import LoopKitUI
             return
         }
         
-        presentStatusHighlight(withMessage: statusHighlight.localizedMessage,
-                               image: statusHighlight.image,
-                               color: statusHighlight.state.color)
-    }
-    
-    private func presentStatusHighlight(withMessage message: String,
-                                       image: UIImage?,
-                                       color: UIColor)
-    {
-        statusHighlightView.messageLabel.text = message
-        statusHighlightView.messageLabel.tintColor = .label
-        statusHighlightView.icon.image = image
-        statusHighlightView.icon.tintColor = color
+        statusHighlightView.setMessage(statusHighlight.localizedMessage, state: statusHighlight.state)
+        statusHighlightView.icon.image = statusHighlight.image
+        statusHighlightView.icon.tintColor = statusHighlight.state.color
         presentStatusHighlight()
     }
     
