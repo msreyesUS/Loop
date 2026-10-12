@@ -50,10 +50,9 @@ public final class DeviceDetailTextView: UIView {
         headlineLabel.adjustsFontSizeToFitWidth = true
         headlineLabel.minimumScaleFactor = 0.75
 
+        // Fixed size (no shrink-to-fit) so the sensor and pod detail lines always match
         detailLabel.font = .systemFont(ofSize: 13)
         detailLabel.textColor = .secondaryLabel
-        detailLabel.adjustsFontSizeToFitWidth = true
-        detailLabel.minimumScaleFactor = 0.8
 
         stack.axis = .vertical
         stack.alignment = .leading
@@ -155,7 +154,7 @@ public class StatusHighlightHUDView: UIView, NibLoadable {
         // The nib's label gives way to the caption/headline/detail block
         messageLabel.removeFromSuperview()
         stackView.insertArrangedSubview(detailTextView, at: 0)
-        stackView.spacing = 8
+        stackView.spacing = 6
         detailTextView.textAlignment = .right
 
         // The stack fills the container; the text block stretches to occupy the

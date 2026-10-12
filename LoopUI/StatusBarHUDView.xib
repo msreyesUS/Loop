@@ -133,7 +133,7 @@
                         <constraint firstItem="oSZ-F8-Rb1" firstAttribute="trailing" secondItem="BMR-SB-Ayc" secondAttribute="trailing" id="FQq-0p-pJZ"/>
                         <constraint firstAttribute="width" relation="greaterThanOrEqual" priority="999" constant="110" id="Nl5-qI-g5J"/>
                         <constraint firstAttribute="trailing" secondItem="BMR-SB-Ayc" secondAttribute="trailing" id="VJX-X2-64n"/>
-                        <constraint firstAttribute="trailing" secondItem="KzR-4q-Npx" secondAttribute="trailing" constant="6" id="YfI-gU-2nA"/>
+                        <constraint firstAttribute="trailing" secondItem="KzR-4q-Npx" secondAttribute="trailing" constant="2" id="YfI-gU-2nA"/>
                         <constraint firstItem="oSZ-F8-Rb1" firstAttribute="top" secondItem="BMR-SB-Ayc" secondAttribute="top" constant="-9" id="f9r-1G-yvo"/>
                         <constraint firstAttribute="bottom" secondItem="BMR-SB-Ayc" secondAttribute="bottom" constant="20" id="gZy-K7-Xnv"/>
                         <constraint firstAttribute="trailing" secondItem="1CX-eC-9a3" secondAttribute="trailing" constant="18" id="pDO-Zj-Lmm"/>
@@ -175,7 +175,7 @@
                     <constraints>
                         <constraint firstItem="Y5a-VS-uto" firstAttribute="top" secondItem="tLF-hy-5Xi" secondAttribute="top" constant="10" id="6dB-mM-ayr"/>
                         <constraint firstItem="Y5a-VS-uto" firstAttribute="centerX" secondItem="tLF-hy-5Xi" secondAttribute="centerX" id="Jfr-8E-Rj4"/>
-                        <constraint firstAttribute="width" constant="84" id="mjr-6a-sQN"/>
+                        <constraint firstAttribute="width" constant="76" id="mjr-6a-sQN"/>
                     </constraints>
                     <connections>
                         <outlet property="loopStateView" destination="Y5a-VS-uto" id="amk-gf-7Pl"/>
@@ -328,7 +328,7 @@
                         <constraint firstAttribute="trailing" secondItem="Ao2-HQ-nCe" secondAttribute="trailing" constant="8" id="bJa-dD-BoX"/>
                         <constraint firstItem="c24-E5-y2y" firstAttribute="trailing" secondItem="Ao2-HQ-nCe" secondAttribute="trailing" id="kcA-4w-90u"/>
                         <constraint firstAttribute="bottom" secondItem="L6g-Dz-wXm" secondAttribute="bottom" constant="26" id="lc5-dm-Pux"/>
-                        <constraint firstItem="L6g-Dz-wXm" firstAttribute="leading" secondItem="GcS-Ho-amr" secondAttribute="leading" constant="6" id="lp7-2x-ROj"/>
+                        <constraint firstItem="L6g-Dz-wXm" firstAttribute="leading" secondItem="GcS-Ho-amr" secondAttribute="leading" constant="2" id="lp7-2x-ROj"/>
                         <constraint firstItem="L6g-Dz-wXm" firstAttribute="trailing" secondItem="Ao2-HQ-nCe" secondAttribute="trailing" constant="-10" id="qLY-aq-n8a"/>
                     </constraints>
                     <connections>

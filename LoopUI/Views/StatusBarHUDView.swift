@@ -68,8 +68,8 @@ public class StatusBarHUDView: UIView, NibLoadable {
         self.backgroundColor = UIColor.secondarySystemBackground
     }
         
-    private static let sectionSpacing: CGFloat = 8
-    private static let narrowSectionSpacing: CGFloat = 6
+    private static let sectionSpacing: CGFloat = 6
+    private static let narrowSectionSpacing: CGFloat = 4
 
     /// A one-point vertical line, shorter than the card so it reads as a soft separator
     private func makeDivider() -> UIView {
@@ -79,7 +79,8 @@ public class StatusBarHUDView: UIView, NibLoadable {
         container.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         let line = UIView()
-        line.backgroundColor = UIColor.separator.withAlphaComponent(0.6)
+        // Same tone as the pills' detail text ("4 hrs 31 min left")
+        line.backgroundColor = .secondaryLabel
         line.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(line)
 

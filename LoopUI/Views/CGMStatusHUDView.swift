@@ -61,7 +61,7 @@ public final class CGMStatusHUDView: DeviceStatusHUDView, NibLoadable {
         // Inset the icon-and-text group from the card edge so the icon starts where
         // the lifecycle bar does
         statusStackView.isLayoutMarginsRelativeArrangement = true
-        statusStackView.layoutMargins.left = 10
+        statusStackView.layoutMargins.left = 8
     }
     
     override public func tintColorDidChange() {

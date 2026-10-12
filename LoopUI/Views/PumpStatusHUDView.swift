@@ -69,20 +69,21 @@ public final class PumpStatusHUDView: DeviceStatusHUDView, NibLoadable {
             statusStackView.addArrangedSubview(expirationView)
         }
 
-        // Pull the pod (and the text hugging it) toward the outer edge so its
-        // padding mirrors the sensor icon's on the far side
+        // Let the content stack run to the pill's trailing edge (the nib insets it by 8
+        // via the background view) so the expiration text has the full width; the pod
+        // itself is nudged back by `podOutwardShift`
         for constraint in constraints where constraint.firstItem === statusStackView && constraint.firstAttribute == .trailing {
-            constraint.constant = 0
+            constraint.constant = 8
         }
 
         // The pod graphic is drawn centered within a wider view; shift the text into
         // that empty margin so it hugs the visible pod like the sensor text hugs its icon
-        expirationView.transform = CGAffineTransform(translationX: Self.podOutwardShift + 6, y: 0)
+        expirationView.transform = CGAffineTransform(translationX: Self.podOutwardShift + 18, y: 0)
     }
 
     /// Horizontal nudge of the pod graphic (and its text) so the pod sits as far inside
     /// the card's edge as the sensor icon does on the opposite side
-    private static let podOutwardShift: CGFloat = -6
+    private static let podOutwardShift: CGFloat = -8
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
