@@ -1674,6 +1674,11 @@ final class StatusTableViewController: LoopChartsTableViewController {
         let cobCaptionLabel = UILabel()
         let basalCaptionLabel = UILabel()
 
+        // Each card is a tap target for its detail screen
+        var onActiveInsulinTapped: (() -> Void)?
+        var onActiveCarbsTapped: (() -> Void)?
+        var onBasalTapped: (() -> Void)?
+
         override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
             super.init(style: style, reuseIdentifier: reuseIdentifier)
 
@@ -1719,6 +1724,12 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 return card
             }
 
+            let tapActions: [Selector] = [#selector(activeInsulinTapped), #selector(activeCarbsTapped), #selector(basalTapped)]
+            for (card, action) in zip(cards, tapActions) {
+                card.isUserInteractionEnabled = true
+                card.addGestureRecognizer(UITapGestureRecognizer(target: self, action: action))
+            }
+
             let stack = UIStackView(arrangedSubviews: cards)
             stack.axis = .horizontal
             stack.distribution = .fillEqually
@@ -1740,6 +1751,18 @@ final class StatusTableViewController: LoopChartsTableViewController {
 
         required init?(coder: NSCoder) {
             fatalError("init(coder:) has not been implemented")
+        }
+
+        @objc private func activeInsulinTapped() {
+            onActiveInsulinTapped?()
+        }
+
+        @objc private func activeCarbsTapped() {
+            onActiveCarbsTapped?()
+        }
+
+        @objc private func basalTapped() {
+            onBasalTapped?()
         }
     }
 
@@ -1764,6 +1787,13 @@ final class StatusTableViewController: LoopChartsTableViewController {
             let iconView = UIImageView(image: image?.withRenderingMode(.alwaysTemplate))
             iconView.tintColor = .white
             iconView.contentMode = .center
+            if image?.isSymbolImage == false {
+                // Asset-catalog icons (bolus, carbs) render at their native PDF size,
+                // which is much larger than the SF Symbols beside them; scale them down
+                // to match so the labels sit at the same height on every button
+                iconView.contentMode = .scaleAspectFit
+                iconView.heightAnchor.constraint(equalToConstant: 22).isActive = true
+            }
 
             let label = UILabel()
             label.text = title
@@ -2091,6 +2121,18 @@ final class StatusTableViewController: LoopChartsTableViewController {
         case .stats:
             let cell = tableView.dequeueReusableCell(withIdentifier: StatsTableViewCell.className, for: indexPath) as! StatsTableViewCell
             configureStatsCell(cell)
+            cell.onActiveInsulinTapped = { [weak self] in
+                self?.performSegue(withIdentifier: InsulinDeliveryTableViewController.className, sender: nil)
+            }
+            cell.onActiveCarbsTapped = { [weak self] in
+                self?.performSegue(withIdentifier: CarbAbsorptionViewController.className, sender: nil)
+            }
+            cell.onBasalTapped = { [weak self] in
+                guard let self = self else { return }
+                if self.automaticDosingStatus.automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled {
+                    self.performSegue(withIdentifier: PredictionTableViewController.className, sender: nil)
+                }
+            }
 
             return cell
         case .hud:
@@ -2291,10 +2333,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
                 presentUnmuteAlertConfirmation()
             }
         case .chart:
+            // The glucose history chart is display-only; the prediction screen is
+            // reached from the Basal stat card instead
             tableView.deselectRow(at: indexPath, animated: true)
-            if automaticDosingStatus.automaticDosingEnabled || !FeatureFlags.simpleBolusCalculatorEnabled {
-                performSegue(withIdentifier: PredictionTableViewController.className, sender: indexPath)
-            }
         case .hero, .stats, .hud, .actions:
             break
         case .status:
