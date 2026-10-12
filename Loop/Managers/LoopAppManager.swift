@@ -14,6 +14,8 @@ import LoopKitUI
 import MockKit
 import HealthKit
 import WidgetKit
+// Scoped import: LoopCore's own `Result` type would shadow Swift.Result in this file
+import enum LoopCore.LoopCompletionFreshness
 
 #if targetEnvironment(simulator)
 enum SimulatorError: Error {
@@ -85,6 +87,7 @@ class LoopAppManager: NSObject {
     private(set) var testingScenariosManager: TestingScenariosManager?
     private var resetLoopManager: ResetLoopManager!
     private var deeplinkManager: DeeplinkManager!
+    private var appIconManager: LoopStatusAppIconManager?
 
     private var overrideHistory = UserDefaults.appGroup?.overrideHistory ?? TemporaryScheduleOverrideHistory.init()
 
@@ -316,6 +319,11 @@ class LoopAppManager: NSObject {
         rootNavigationController?.setViewControllers([statusTableViewController], animated: true)
 
         deviceDataManager.refreshDeviceData()
+
+        // The Home Screen icon mirrors the loop ring: red open ring while the loop is stale
+        appIconManager = LoopStatusAppIconManager(lastLoopCompleted: { [weak deviceDataManager] in
+            deviceDataManager?.loopManager.lastLoopCompleted
+        })
 
         handleRemoteNotificationFromLaunchOptions()
 
@@ -659,5 +667,93 @@ extension LoopAppManager: ResetLoopManagerDelegate {
     
     func presentCouldNotResetLoopAlert(error: Error) {
         alertManager.presentCouldNotResetLoopAlert(error: error)
+    }
+}
+
+// MARK: - Loop status app icon
+
+/// Swaps the Home Screen icon to the red open ring (`AppIcon-Stale`) while the loop is
+/// stale (no completed loop for 16 minutes) and back to the primary icon once it recovers.
+///
+/// Measured on iOS 27: `setAlternateIconName` succeeds silently (no system alert) while the
+/// app is in the foreground and fails with "The operation was cancelled" once the app is in
+/// the background. So the icon can only track loop status while Loop is in front: it is
+/// re-evaluated when the app becomes active, when it is about to resign, on loop completions,
+/// and when a timer says the current loop has just gone stale. Between foreground sessions
+/// the icon shows the status as of the last time Loop was open.
+final class LoopStatusAppIconManager {
+    static let staleIconName = "AppIcon-Stale"
+
+    private let lastLoopCompleted: () -> Date?
+    private let log = DiagnosticLog(category: "LoopStatusAppIconManager")
+    private var staleTimer: Timer?
+    private var observers: [NSObjectProtocol] = []
+
+    init(lastLoopCompleted: @escaping () -> Date?) {
+        self.lastLoopCompleted = lastLoopCompleted
+
+        let center = NotificationCenter.default
+        let triggers: [Notification.Name] = [
+            .LoopCompleted,
+            UIApplication.didBecomeActiveNotification,
+            UIApplication.willResignActiveNotification,
+            UIApplication.didEnterBackgroundNotification,
+        ]
+        for name in triggers {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.update()
+            })
+        }
+
+        update()
+    }
+
+    deinit {
+        observers.forEach(NotificationCenter.default.removeObserver)
+        staleTimer?.invalidate()
+    }
+
+    /// Re-evaluates loop freshness, applies the matching icon, and re-arms the stale timer
+    func update() {
+        dispatchPrecondition(condition: .onQueue(.main))
+
+        let lastCompleted = lastLoopCompleted()
+        let freshness = LoopCompletionFreshness(lastCompletion: lastCompleted)
+        applyIcon(stale: freshness == .stale)
+        armStaleTimer(lastCompleted: lastCompleted, freshness: freshness)
+    }
+
+    private func applyIcon(stale: Bool) {
+        let application = UIApplication.shared
+        guard application.supportsAlternateIcons else { return }
+        // The system refuses icon changes from the background; wait for the next foreground pass
+        guard application.applicationState != .background else { return }
+
+        let desired: String? = stale ? Self.staleIconName : nil
+        guard application.alternateIconName != desired else { return }
+
+        application.setAlternateIconName(desired) { [log] error in
+            if let error = error {
+                log.error("Failed to set app icon to %{public}@: %{public}@", desired ?? "primary", String(describing: error))
+            } else {
+                log.default("App icon set to %{public}@", desired ?? "primary")
+            }
+        }
+    }
+
+    private func armStaleTimer(lastCompleted: Date?, freshness: LoopCompletionFreshness) {
+        staleTimer?.invalidate()
+        staleTimer = nil
+
+        guard freshness != .stale, let lastCompleted = lastCompleted, let staleAfter = LoopCompletionFreshness.aging.maxAge else {
+            return
+        }
+
+        let timer = Timer(fire: lastCompleted.addingTimeInterval(staleAfter + 1), interval: 0, repeats: false) { [weak self] _ in
+            self?.update()
+        }
+        timer.tolerance = 5
+        RunLoop.main.add(timer, forMode: .common)
+        staleTimer = timer
     }
 }

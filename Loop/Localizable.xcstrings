@@ -30261,6 +30261,9 @@
         }
       }
     },
+    "Pod" : {
+      "comment" : "Caption naming an Omnipod in the status bar pill"
+    },
     "Possible Missed Meal" : {
       "comment" : "The notification title for a meal that was possibly not logged in Loop.",
       "localizations" : {
