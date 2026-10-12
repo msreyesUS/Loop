@@ -56,7 +56,7 @@ public final class DeviceDetailTextView: UIView {
 
         stack.axis = .vertical
         stack.alignment = .leading
-        stack.spacing = 2
+        stack.spacing = 1
         for label in [captionLabel, headlineLabel, detailLabel] {
             stack.addArrangedSubview(label)
         }
