@@ -51,7 +51,7 @@ public final class DeviceDetailTextView: UIView {
         headlineLabel.minimumScaleFactor = 0.75
 
         // Fixed size (no shrink-to-fit) so the sensor and pod detail lines always match
-        detailLabel.font = .systemFont(ofSize: 12)
+        detailLabel.font = .systemFont(ofSize: 11)
         detailLabel.textColor = .secondaryLabel
 
         stack.axis = .vertical
