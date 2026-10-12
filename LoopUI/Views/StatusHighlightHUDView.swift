@@ -41,22 +41,22 @@ public final class DeviceDetailTextView: UIView {
     }
 
     private func setup() {
-        captionLabel.font = .systemFont(ofSize: 13)
+        captionLabel.font = .systemFont(ofSize: 12)
         captionLabel.textColor = .secondaryLabel
 
-        headlineLabel.font = .systemFont(ofSize: 17, weight: .semibold)
+        headlineLabel.font = .systemFont(ofSize: 15, weight: .semibold)
         headlineLabel.textColor = .label
         headlineLabel.numberOfLines = 2
         headlineLabel.adjustsFontSizeToFitWidth = true
         headlineLabel.minimumScaleFactor = 0.75
 
         // Fixed size (no shrink-to-fit) so the sensor and pod detail lines always match
-        detailLabel.font = .systemFont(ofSize: 13)
+        detailLabel.font = .systemFont(ofSize: 12)
         detailLabel.textColor = .secondaryLabel
 
         stack.axis = .vertical
         stack.alignment = .leading
-        stack.spacing = 1
+        stack.spacing = 2
         for label in [captionLabel, headlineLabel, detailLabel] {
             stack.addArrangedSubview(label)
         }
