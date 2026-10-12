@@ -71,7 +71,7 @@ public final class LoopCompletionHUDView: BaseHUDView {
         let bottomConstraint = label.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -4)
         bottomConstraint.priority = UILayoutPriority(999)
         NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: loopStateView.bottomAnchor, constant: 6),
+            label.topAnchor.constraint(equalTo: loopStateView.bottomAnchor, constant: 5),
             label.centerXAnchor.constraint(equalTo: centerXAnchor),
             label.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor),
             label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
