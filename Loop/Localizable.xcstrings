@@ -843,6 +843,17 @@
         }
       }
     },
+    "%@ carbs, %@ absorption" : {
+      "comment" : "Favorite food row detail on the carb entry screen (1: carb amount)(2: absorption time)",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ carbs, %2$@ absorption"
+          }
+        }
+      }
+    },
     "%@ remaining" : {
       "comment" : "Estimated remaining duration with more than a minute",
       "localizations" : {
@@ -12329,6 +12340,7 @@
     },
     "Choose Favorite:" : {
       "comment" : "The label for the row where you choose saved Favorite Food",
+      "extractionState" : "stale",
       "localizations" : {
         "da" : {
           "stringUnit" : {
@@ -29056,6 +29068,7 @@
     },
     "None" : {
       "comment" : "Indicates no favorite food is selected",
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
