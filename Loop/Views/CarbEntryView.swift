@@ -24,12 +24,24 @@ struct CarbEntryView: View, HorizontalSizeClassOverride {
     
     private let isNewEntry: Bool
 
+    /// Formats the carb amount shown on each favorite food row
+    private let carbFormatter: QuantityFormatter
+
+    /// Formats the absorption time shown on each favorite food row, e.g. "3h"
+    private static let absorptionTimeFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute]
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
+
     init(viewModel: CarbEntryViewModel) {
         if viewModel.shouldBeginEditingQuantity {
             expandedRow = .amountConsumed
         }
         isNewEntry = viewModel.originalCarbEntry == nil
         self.viewModel = viewModel
+        carbFormatter = QuantityFormatter(for: viewModel.preferredCarbUnit)
     }
     
     var body: some View {
@@ -214,40 +226,11 @@ extension CarbEntryView {
             
             VStack(spacing: 10) {
                 if !viewModel.favoriteFoods.isEmpty {
-                    VStack {
-                        HStack {
-                            Text("Choose Favorite:", comment: "The label for the row where you choose saved Favorite Food")
-                            
-                            let selectedFavorite = favoritedFoodTextFromIndex(viewModel.selectedFavoriteFoodIndex)
-                            Text(selectedFavorite)
-                                .minimumScaleFactor(0.8)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                        }
-                        
-                        if expandedRow == .favoriteFoodSelection {
-                            Picker(String(""), selection: $viewModel.selectedFavoriteFoodIndex) {
-                                ForEach(-1..<viewModel.favoriteFoods.count, id: \.self) { index in
-                                    Text(favoritedFoodTextFromIndex(index))
-                                        .tag(index)
-                                }
-                            }
-                            .pickerStyle(.wheel)
-                        }
-                    }
-                    .onTapGesture {
-                        withAnimation {
-                            if expandedRow == .favoriteFoodSelection {
-                                expandedRow = nil
-                            }
-                            else {
-                                expandedRow = .favoriteFoodSelection
-                            }
-                        }
-                    }
-                    
+                    favoriteFoodsList
+
                     CardSectionDivider()
                 }
-                
+
                 Button(action: saveAsFavoriteFood) {
                     Text("Save as favorite food", comment: "Button label for saving current carb entry as a new Favorite Food")
                         .frame(maxWidth: .infinity)
@@ -260,15 +243,66 @@ extension CarbEntryView {
             .padding(.horizontal)
         }
     }
-    
-    private func favoritedFoodTextFromIndex(_ index: Int) -> String {
-        if index == -1 {
-            return String(localized: "None", comment: "Indicates no favorite food is selected")
+
+    /// Rows beyond this many scroll within the card instead of growing it
+    private static let maxVisibleFavoriteRows = 4
+    private static let favoriteRowHeight: CGFloat = 52
+
+    /// Every favorite as a tappable row with a checkmark on the selected one; tapping the
+    /// selected row again deselects it (index -1), which clears the entry like "None" did
+    @ViewBuilder
+    private var favoriteFoodsList: some View {
+        let rows = VStack(spacing: 0) {
+            ForEach(Array(viewModel.favoriteFoods.enumerated()), id: \.element.id) { index, food in
+                favoriteFoodRow(food, isSelected: viewModel.selectedFavoriteFoodIndex == index)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            viewModel.selectedFavoriteFoodIndex = viewModel.selectedFavoriteFoodIndex == index ? -1 : index
+                        }
+                    }
+
+                if index < viewModel.favoriteFoods.count - 1 {
+                    Divider()
+                }
+            }
         }
-        else {
-            let food = viewModel.favoriteFoods[index]
-            return "\(food.name) \(food.foodType)"
+
+        if viewModel.favoriteFoods.count > Self.maxVisibleFavoriteRows {
+            // Show a half row past the limit so it reads as scrollable
+            ScrollView(.vertical, showsIndicators: true) {
+                rows
+            }
+            .frame(height: Self.favoriteRowHeight * (CGFloat(Self.maxVisibleFavoriteRows) + 0.5))
+        } else {
+            rows
         }
+    }
+
+    private func favoriteFoodRow(_ food: StoredFavoriteFood, isSelected: Bool) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(food.title)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+
+                Text("\(food.carbsString(formatter: carbFormatter)) carbs, \(food.absorptionTimeString(formatter: Self.absorptionTimeFormatter)) absorption", comment: "Favorite food row detail on the carb entry screen (1: carb amount)(2: absorption time)")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "checkmark")
+                .font(.body.weight(.semibold))
+                .foregroundColor(.accentColor)
+                .opacity(isSelected ? 1 : 0)
+                .accessibilityHidden(!isSelected)
+        }
+        .frame(height: Self.favoriteRowHeight)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
     
     private func saveAsFavoriteFood() {
@@ -310,6 +344,6 @@ extension CarbEntryView {
 
 extension CarbEntryView {
     enum Row {
-        case amountConsumed, time, foodType, absorptionTime, favoriteFoodSelection
+        case amountConsumed, time, foodType, absorptionTime
     }
 }
