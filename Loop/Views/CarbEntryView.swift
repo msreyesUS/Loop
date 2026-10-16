@@ -249,33 +249,51 @@ extension CarbEntryView {
     private static let favoriteRowHeight: CGFloat = 52
 
     /// Every favorite as a tappable row with a checkmark on the selected one; tapping the
-    /// selected row again deselects it (index -1), which clears the entry like "None" did
-    @ViewBuilder
+    /// selected row again deselects it (index -1), which clears the entry like "None" did.
+    /// Rows can be deleted by swiping (iOS 27, where swipe actions work outside a List)
+    /// or from a long-press menu on any version.
     private var favoriteFoodsList: some View {
-        let rows = VStack(spacing: 0) {
-            ForEach(Array(viewModel.favoriteFoods.enumerated()), id: \.element.id) { index, food in
-                favoriteFoodRow(food, isSelected: viewModel.selectedFavoriteFoodIndex == index)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            viewModel.selectedFavoriteFoodIndex = viewModel.selectedFavoriteFoodIndex == index ? -1 : index
-                        }
-                    }
+        let count = viewModel.favoriteFoods.count
+        let isScrollable = count > Self.maxVisibleFavoriteRows
+        // Show a half row past the limit so it reads as scrollable
+        let visibleRows = isScrollable ? CGFloat(Self.maxVisibleFavoriteRows) + 0.5 : CGFloat(count)
 
-                if index < viewModel.favoriteFoods.count - 1 {
-                    Divider()
+        // Always a scroll container (disabled when everything fits) so swipe actions have a host
+        return ScrollView(.vertical, showsIndicators: isScrollable) {
+            VStack(spacing: 0) {
+                ForEach(Array(viewModel.favoriteFoods.enumerated()), id: \.element.id) { index, food in
+                    favoriteFoodRow(food, isSelected: viewModel.selectedFavoriteFoodIndex == index)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                viewModel.selectedFavoriteFoodIndex = viewModel.selectedFavoriteFoodIndex == index ? -1 : index
+                            }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            deleteFavoriteButton(food)
+                        }
+                        .contextMenu {
+                            deleteFavoriteButton(food)
+                        }
+
+                    if index < count - 1 {
+                        Divider()
+                    }
                 }
             }
         }
+        .scrollDisabledIfAvailable(!isScrollable)
+        .frame(height: Self.favoriteRowHeight * visibleRows)
+        .favoriteSwipeActionsContainer()
+    }
 
-        if viewModel.favoriteFoods.count > Self.maxVisibleFavoriteRows {
-            // Show a half row past the limit so it reads as scrollable
-            ScrollView(.vertical, showsIndicators: true) {
-                rows
+    private func deleteFavoriteButton(_ food: StoredFavoriteFood) -> some View {
+        Button(role: .destructive) {
+            withAnimation {
+                viewModel.deleteFavoriteFood(food)
             }
-            .frame(height: Self.favoriteRowHeight * (CGFloat(Self.maxVisibleFavoriteRows) + 0.5))
-        } else {
-            rows
+        } label: {
+            Label(String(localized: "Delete", comment: "Button label to delete a favorite food from the carb entry list"), systemImage: "trash")
         }
     }
 
@@ -345,5 +363,28 @@ extension CarbEntryView {
 extension CarbEntryView {
     enum Row {
         case amountConsumed, time, foodType, absorptionTime
+    }
+}
+
+private extension View {
+    /// Lets `swipeActions` work on rows inside a plain ScrollView. The container modifier
+    /// is iOS 27+; earlier systems fall back to the rows' long-press menu.
+    @ViewBuilder
+    func favoriteSwipeActionsContainer() -> some View {
+        if #available(iOS 27, *) {
+            self.swipeActionsContainer()
+        } else {
+            self
+        }
+    }
+
+    /// `scrollDisabled` is iOS 16+; below that the list simply bounces when it already fits
+    @ViewBuilder
+    func scrollDisabledIfAvailable(_ disabled: Bool) -> some View {
+        if #available(iOS 16, *) {
+            self.scrollDisabled(disabled)
+        } else {
+            self
+        }
     }
 }

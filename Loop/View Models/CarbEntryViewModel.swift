@@ -216,6 +216,18 @@ final class CarbEntryViewModel: ObservableObject {
         favoriteFoods.append(newStoredFood)
         selectedFavoriteFoodIndex = favoriteFoods.count - 1
     }
+
+    /// Removes a favorite (persisted through the `favoriteFoods` observer) and keeps the
+    /// selection pointing at the same food, or clears it if the selected food was deleted
+    func deleteFavoriteFood(_ food: StoredFavoriteFood) {
+        guard let index = favoriteFoods.firstIndex(where: { $0.id == food.id }) else { return }
+        favoriteFoods.remove(at: index)
+        if selectedFavoriteFoodIndex == index {
+            selectedFavoriteFoodIndex = -1
+        } else if selectedFavoriteFoodIndex > index {
+            selectedFavoriteFoodIndex -= 1
+        }
+    }
     
     private func observeFavoriteFoodIndexChange() {
         $selectedFavoriteFoodIndex

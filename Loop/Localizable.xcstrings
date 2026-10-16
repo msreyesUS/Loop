@@ -15161,6 +15161,7 @@
       }
     },
     "Delete" : {
+      "comment" : "Button label to delete a favorite food from the carb entry list",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
